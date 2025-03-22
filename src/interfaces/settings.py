@@ -16,7 +16,7 @@ class Settings(QWidget):
         main_layout = QHBoxLayout()
 
         sidebar = QVBoxLayout()
-        self.categories = ["General", "3D Model", "LLM Model", "Generation"]
+        self.categories = ["General", "LLM Model", "Generation"]
         self.category_buttons = {}
         for category in self.categories:
             btn = QPushButton(category)
@@ -59,21 +59,6 @@ class Settings(QWidget):
         general_widget.setLayout(general_layout)
         self.stack.addWidget(general_widget)
 
-        # 3D Model
-        model_widget = QWidget()
-        model_layout = QVBoxLayout()
-        self.model_path_label = QLabel(f"Current: {self.aina.viewer.model_path}")
-        import_btn = QPushButton("Import Model")
-        import_btn.clicked.connect(self.import_model)
-        default_btn = QPushButton("Restore Default")
-        default_btn.clicked.connect(self.restore_default_model)
-        model_layout.addWidget(self.model_path_label)
-        model_layout.addWidget(import_btn)
-        model_layout.addWidget(default_btn)
-        model_layout.addStretch()
-        model_widget.setLayout(model_layout)
-        self.stack.addWidget(model_widget)
-
         # LLM Model (placeholder)
         llm_widget = QWidget()
         llm_layout = QVBoxLayout()
@@ -109,19 +94,6 @@ class Settings(QWidget):
             self.aina.save_config()
         except ValueError:
             print("Invalid resolution values")
-
-    def import_model(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Select Model", "", "GLTF Files (*.gltf *.glb)")
-        if file_path:
-            self.aina.viewer.load_model(file_path)
-            self.aina.viewer.part_visibility.clear()
-            for part_id in range(len(self.aina.viewer.meshes)):
-                self.aina.viewer.part_visibility[part_id] = True
-            self.model_path_label.setText(f"Current: {file_path}")
-            self.aina.save_config()
-            if self.aina.customizer and self.aina.customizer.isVisible():
-                self.aina.customizer.tree.clear()
-                self.aina.customizer.populate_tree()
 
     def restore_default_model(self):
         self.aina.viewer.load_model(self.aina.default_model_path)

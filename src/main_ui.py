@@ -12,10 +12,9 @@ class AINA(QWidget):
     def __init__(self):
         super().__init__()
         self.config_file = "config.json"
-        # self.default_model_path = "assets/models/Karelia/Karelia.gltf"
-        self.default_model_path = "assets/models/tau/Tau_Mpct9yh.gltf"
+        self.default_model_path = "assets/models/Karelia/Karelia.gltf"
         self.viewer = None
-        self.drag_area_height = 20
+        self.drag_area_size = 30
         
         self.load_config()
 
@@ -32,18 +31,33 @@ class AINA(QWidget):
         self.customizer = Customizer(self.viewer)
         self.settings = Settings(self)
         self.old_pos = None
+        self.is_dragging = False
 
     def init_ui(self):
         """Initialize the UI elements."""
+        outer_layout = QVBoxLayout()
         main_layout = QHBoxLayout()
 
-        # Draggable area (top bar)
-        self.drag_area = QWidget(self)
-        self.drag_area.setFixedHeight(self.drag_area_height)
-        self.drag_area.setAutoFillBackground(True)  # Ensures background color is applied
-        self.drag_area.setStyleSheet("background-color: rgba(50, 50, 50, 255);")  # Ensure full opacity
-
-        main_layout.addWidget(self.drag_area)
+        # Draggable area (button)
+        self.drag_area = QPushButton(self)
+        self.drag_area.setIcon(QIcon("assets/icons/drag.png"))
+        self.drag_area.setFixedSize(self.drag_area_size, self.drag_area_size)
+        self.drag_area.setStyleSheet("""
+            QPushButton {
+                background-color: #ff5733;
+                color: white;
+                border-radius: 10px;
+                font-size: 16px;
+                padding: 8px 8px;
+            }
+            QPushButton:pressed {
+                background-color: #ff8566;
+            }
+        """)
+        self.drag_area.setCursor(QCursor(Qt.CursorShape.SizeAllCursor))
+        self.drag_area.pressed.connect(self.start_drag)
+        
+        outer_layout.addWidget(self.drag_area)
         
         content_layout = QHBoxLayout()
 
@@ -62,7 +76,7 @@ class AINA(QWidget):
         self.exit_button = QToolButton()
         self.exit_button.setIcon(QIcon("assets/icons/exit.png"))
         self.exit_button.setToolTip("Exit AINA")
-        self.exit_button.clicked.connect(self.close)
+        self.exit_button.clicked.connect(self.quit)
 
         # Customize Button
         self.customize_button = QToolButton()
@@ -84,9 +98,10 @@ class AINA(QWidget):
         
         content_layout.addLayout(button_layout)
         main_layout.addLayout(content_layout)
+        outer_layout.addLayout(main_layout)
 
-        self.setLayout(main_layout)
-        self.setMinimumSize(200, 200 + self.drag_area_height)
+        self.setLayout(outer_layout)
+        self.setMinimumSize(200, 200 + self.drag_area_size)
 
     def load_config(self):
         """Load settings from config file, using defaults if not found."""
@@ -101,8 +116,8 @@ class AINA(QWidget):
         else:
             print(f"No config file found at {self.config_file}. Initializing with defaults.")
 
-        self.config.setdefault("width", vw(30))
-        self.config.setdefault("height", vh(30))
+        self.config.setdefault("width", vw(20))
+        self.config.setdefault("height", vh(20))
         self.config.setdefault("model_path", self.default_model_path)
         self.config.setdefault("part_visibility", {})
         self.config.setdefault("allow_overflow", False)
@@ -127,6 +142,9 @@ class AINA(QWidget):
         except Exception as e:
             print(f"Error saving config: {e}")
 
+    def quit(self):
+        QApplication.quit()
+
     def closeEvent(self, event):
         """Override close event to save config."""
         self.save_config()
@@ -147,35 +165,33 @@ class AINA(QWidget):
             self.customizer.show()
         else:
             self.customizer.raise_()
-    
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            if event.position().y() < self.drag_area_height:
-                self.old_pos = event.globalPosition().toPoint()
+
+    def start_drag(self):
+        """Initiate dragging when the drag_area button is pressed."""
+        self.is_dragging = True
+        self.old_pos = QApplication.instance().overrideCursor() or QCursor.pos()  # Use global cursor pos
 
     def mouseMoveEvent(self, event):
-        if self.old_pos is not None:
+        """Handle dragging when initiated by the drag_area button."""
+        if self.is_dragging and self.old_pos is not None:
             delta = event.globalPosition().toPoint() - self.old_pos
             new_pos = self.pos() + delta
+            screen = QApplication.primaryScreen().availableGeometry()
+                
             if not self.config["allow_overflow"]:
-                screen = QApplication.primaryScreen().availableGeometry()
                 new_pos.setX(max(0, min(new_pos.x(), screen.width() - self.width())))
                 new_pos.setY(max(0, min(new_pos.y(), screen.height() - self.height())))
+            
+            new_pos.setX(max(0, min(new_pos.x(), screen.width() - self.drag_area_size)))
+            new_pos.setY(max(0, min(new_pos.y(), screen.height() - self.drag_area_size)))
             self.move(new_pos)
             self.old_pos = event.globalPosition().toPoint()
 
-        # Fix cursor update logic
-        cursor_y = int(event.position().y())  # Ensure integer value
-        if cursor_y < self.drag_area_height:
-            self.setCursor(QCursor(Qt.CursorShape.SizeAllCursor))
-        else:
-            self.unsetCursor()
-        
     def mouseReleaseEvent(self, event):
+        """End dragging when the mouse is released."""
+        self.is_dragging = False
         self.old_pos = None
-        # Reset cursor after dragging
-        if event.position().y() >= self.drag_area_height:
-            self.unsetCursor()
 
     def leaveEvent(self, event):
-        self.unsetCursor()
+        """No cursor reset needed since drag_area handles it."""
+        pass

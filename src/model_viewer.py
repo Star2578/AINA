@@ -5,17 +5,16 @@ from OpenGL.GL import *
 from OpenGL.arrays import vbo
 import numpy as np
 from pygltflib import GLTF2
-import trimesh
 from PIL import Image
 import os
 import urllib.parse
-import json
+import io
+import struct
 
 class ModelViewer(QOpenGLWidget):
     def __init__(self, model_path, part_visibility=None):
         super().__init__()
         self.model_path = model_path
-        self.mesh = None
         self.meshes = []  # List to store multiple meshes or parts
         self.texture_ids = {}  # Dictionary to store texture IDs
         self.material_map = {}  # Maps mesh parts to their materials/textures
@@ -24,7 +23,7 @@ class ModelViewer(QOpenGLWidget):
         self.translate_x = 0.0
         self.translate_y = 0.0
         self.last_pos = None
-        self.zoom = -5.0
+        self.zoom = -4.0
         
         # Animation properties
         self.animations = []
@@ -83,7 +82,7 @@ class ModelViewer(QOpenGLWidget):
         
         # Render each mesh part
         if self.meshes:
-            for part_id, mesh in enumerate(self.meshes):
+            for part_id in range(len(self.meshes)):
                 # Skip if part is hidden
                 if not self.part_visibility.get(part_id, True):
                     continue
@@ -91,13 +90,6 @@ class ModelViewer(QOpenGLWidget):
                 # Check if part has VBOs
                 if part_id in self.vertex_vbos:
                     self.render_part_with_vbos(part_id)
-                else:
-                    self.render_part_legacy(part_id, mesh)
-        # Fallback to single mesh rendering
-        elif self.vertex_vbos.get(0) is not None:
-            self.render_part_with_vbos(0)
-        elif self.mesh is not None:
-            self.render_part_legacy(0, self.mesh)
 
     def render_part_with_vbos(self, part_id):
         """Render a specific part using VBOs with texture mapping."""
@@ -108,10 +100,8 @@ class ModelViewer(QOpenGLWidget):
         if texture_id is not None and texture_id in self.texture_ids:
             glEnable(GL_TEXTURE_2D)
             glBindTexture(GL_TEXTURE_2D, self.texture_ids[texture_id])
-            # print(f"Binding texture ID: {self.texture_ids[texture_id]} for part {part_id}")
         else:
             glDisable(GL_TEXTURE_2D)
-            # print(f"No texture available for part {part_id}")
 
         # Enable arrays
         glEnableClientState(GL_VERTEX_ARRAY)
@@ -151,48 +141,6 @@ class ModelViewer(QOpenGLWidget):
         glBindBuffer(GL_ARRAY_BUFFER, 0)
         glDisable(GL_TEXTURE_2D)
 
-    def render_part_legacy(self, part_id, mesh):
-        """Fallback rendering method for a specific part using legacy OpenGL."""
-        if mesh is None:
-            return
-            
-        # Get the texture ID for this part
-        texture_id = self.material_map.get(part_id, None)
-        
-        # Bind texture if available
-        if texture_id is not None and texture_id in self.texture_ids:
-            glEnable(GL_TEXTURE_2D)
-            glBindTexture(GL_TEXTURE_2D, self.texture_ids[texture_id])
-        else:
-            glDisable(GL_TEXTURE_2D)
-            
-        # Get vertices and faces
-        vertices = mesh.vertices
-        faces = mesh.faces
-        
-        # Get UV coordinates if available
-        has_uv = hasattr(mesh.visual, 'uv')
-        uv = mesh.visual.uv if has_uv else None
-        
-        # Get normals if available
-        has_normals = hasattr(mesh, 'vertex_normals')
-        normals = mesh.vertex_normals if has_normals else None
-        
-        # Render using legacy OpenGL
-        glBegin(GL_TRIANGLES)
-        for face_idx, face in enumerate(faces):
-            for i, vertex_idx in enumerate(face):
-                if has_normals:
-                    glNormal3f(*normals[vertex_idx])
-                    
-                if has_uv and uv is not None and vertex_idx < len(uv):
-                    glTexCoord2f(uv[vertex_idx][0], uv[vertex_idx][1])
-                    
-                glVertex3f(*vertices[vertex_idx])
-        glEnd()
-        
-        glDisable(GL_TEXTURE_2D)
-
     def load_model(self, path):
         """Load model with proper clearing and visibility handling."""
         try:
@@ -201,7 +149,7 @@ class ModelViewer(QOpenGLWidget):
                 print(f"Model file not found: {path}")
                 return
 
-            # Store original visibility and check if it’s the same model
+            # Store original visibility and check if it's the same model
             original_visibility = {int(k): v for k, v in self.part_visibility.items()}
             is_same_model = path == self.model_path
             print(f"Original part_visibility before clearing: {self.part_visibility}, is_same_model: {is_same_model}")
@@ -212,27 +160,13 @@ class ModelViewer(QOpenGLWidget):
             self.model_path = path
             print(f"Set model_path to: {self.model_path}")
 
+            # Only support GLTF/GLB files now
             if path.lower().endswith(('.gltf', '.glb')):
-                print("Attempting to load GLTF/GLB model...")
+                print("Loading GLTF/GLB model...")
                 self.load_gltf_model(path)
             else:
-                print("Attempting to load non-GLTF model with trimesh...")
-                self.mesh = trimesh.load(path, force='mesh')
-                print("Mesh loaded, checking validity...")
-                if self.mesh is None:
-                    print("Failed to load mesh")
-                    return
-                print(f"Loaded mesh with {len(self.mesh.vertices)} vertices and {len(self.mesh.faces)} faces")
-                if len(self.mesh.vertices) > 10000:
-                    print("Large model detected, attempting to simplify...")
-                    self.simplify_model(self.mesh)
-                model_dir = os.path.dirname(path)
-                print(f"Loading textures from directory: {model_dir}")
-                self.load_generic_textures(model_dir)
-                print("Creating VBOs for part 0...")
-                self.create_vbos_for_part(0, self.mesh)
-                print("Scaling model...")
-                self.scale_model()
+                print("Only GLTF/GLB models are supported")
+                return
 
             # Apply visibility settings after loading
             print(f"Before apply_visibility_settings, part_visibility: {self.part_visibility}")
@@ -251,7 +185,7 @@ class ModelViewer(QOpenGLWidget):
             gltf = GLTF2().load(path)
             model_dir = os.path.dirname(path)
             print(f"Loading GLTF/GLB model: {path}")
-            self.load_gltf_textures(path, model_dir)
+            self.load_gltf_textures(gltf, path, model_dir)
             
             if not hasattr(gltf, 'meshes') or not gltf.meshes:
                 print("No meshes found in GLTF/GLB file")
@@ -263,26 +197,237 @@ class ModelViewer(QOpenGLWidget):
                     material_idx = getattr(primitive, 'material', None)
                     if material_idx is not None:
                         self.material_map[part_id] = material_idx
-                    mesh = self.extract_primitive_mesh(gltf, primitive)
-                    if mesh:
-                        mesh_name = gltf_mesh.name if gltf_mesh.name else f"Mesh_{mesh_idx}_Prim_{prim_idx}"
-                        self.part_names[part_id] = mesh_name
-                        self.meshes.append(mesh)
-                        # Set default visibility to True if not already set
-                        if part_id not in self.part_visibility:
-                            self.part_visibility[part_id] = True
-                        self.create_vbos_for_part(part_id, mesh)
-                        print(f"Loaded mesh part {part_id} named '{mesh_name}' with material {material_idx}")
+                    
+                    mesh_data = {
+                        'primitive': primitive,
+                        'gltf': gltf,
+                        'mesh_idx': mesh_idx,
+                        'prim_idx': prim_idx
+                    }
+                    mesh_name = gltf_mesh.name if gltf_mesh.name else f"Mesh_{mesh_idx}_Prim_{prim_idx}"
+                    self.part_names[part_id] = mesh_name
+                    self.meshes.append(mesh_data)
+                    
+                    if part_id not in self.part_visibility:
+                        self.part_visibility[part_id] = True
+                    
+                    self.process_primitive_to_vbo(part_id, gltf, primitive)
+                    print(f"Loaded mesh part {part_id} named '{mesh_name}' with material {material_idx}")
             
             if self.meshes:
-                self.mesh = self.meshes[0]
                 self.scale_model()
                 self.load_animations(gltf)
         except Exception as e:
+            import traceback
             print(f"Error loading GLTF model: {e}")
+            print(traceback.format_exc())
+
+    def process_primitive_to_vbo(self, part_id, gltf, primitive):
+        """Process a GLTF primitive directly to VBOs without using trimesh."""
+        try:
+            # Check if the primitive has position attribute (required)
+            if not hasattr(primitive.attributes, 'POSITION') or primitive.attributes.POSITION is None:
+                print(f"Primitive {part_id} has no POSITION attribute")
+                return False
+            
+            binary_data = None
+            if gltf.buffers[0].uri is None:
+                # GLB case: binary data is embedded
+                binary_data = gltf.binary_blob()
+                if binary_data is None:
+                    print("Expected binary blob for GLB file, but none found")
+                    return False
+            else:
+                # GLTF case: load external buffer file
+                decoded_path = urllib.parse.unquote(self.model_path)
+                model_dir = os.path.dirname(decoded_path)
+                buffer_uri = gltf.buffers[0].uri
+                buffer_uri = urllib.parse.unquote(buffer_uri)
+                buffer_path = os.path.join(model_dir, buffer_uri)
+                if not os.path.exists(buffer_path):
+                    print(f"External buffer file not found: {buffer_path}")
+                    return False
+                with open(buffer_path, 'rb') as f:
+                    binary_data = f.read()
+            
+            # Extract vertex positions
+            pos_accessor = gltf.accessors[primitive.attributes.POSITION]
+            vertices = self._extract_accessor_data(gltf, pos_accessor, binary_data, 3)
+            if vertices is None:
+                print(f"Failed to extract vertex positions for part {part_id}")
+                return False
+            
+            # Create vertex VBO
+            self.vertex_vbos[part_id] = vbo.VBO(np.array(vertices, dtype=np.float32))
+            
+            # Extract normals (optional)
+            if hasattr(primitive.attributes, 'NORMAL') and primitive.attributes.NORMAL is not None:
+                norm_accessor = gltf.accessors[primitive.attributes.NORMAL]
+                normals = self._extract_accessor_data(gltf, norm_accessor, binary_data, 3)
+                if normals is not None:
+                    self.normal_vbos[part_id] = vbo.VBO(np.array(normals, dtype=np.float32))
+                else:
+                    self.normal_vbos[part_id] = None
+            else:
+                self.normal_vbos[part_id] = None
+            
+            # Extract texture coordinates (optional)
+            if hasattr(primitive.attributes, 'TEXCOORD_0') and primitive.attributes.TEXCOORD_0 is not None:
+                uv_accessor = gltf.accessors[primitive.attributes.TEXCOORD_0]
+                uvs = self._extract_accessor_data(gltf, uv_accessor, binary_data, 2)
+                if uvs is not None:
+                    # Flip Y coordinates for OpenGL
+                    uvs_copy = uvs.copy()
+                    uvs_copy[:, 1] = 1.0 - uvs_copy[:, 1]
+                    self.uv_vbos[part_id] = vbo.VBO(np.array(uvs_copy, dtype=np.float32))
+                else:
+                    self.uv_vbos[part_id] = None
+            else:
+                self.uv_vbos[part_id] = None
+            
+            # Extract indices (optional)
+            if primitive.indices is not None:
+                idx_accessor = gltf.accessors[primitive.indices]
+                indices = self._extract_accessor_data(gltf, idx_accessor, binary_data, 1)
+                if indices is not None:
+                    self.index_buffers[part_id] = np.array(indices, dtype=np.uint32).flatten()
+                    self.num_faces[part_id] = len(indices) // 3
+                else:
+                    self.index_buffers[part_id] = None
+                    self.num_faces[part_id] = len(vertices) // 3
+            else:
+                # No indices, assume vertices are already arranged as triangles
+                self.index_buffers[part_id] = None
+                self.num_faces[part_id] = len(vertices) // 3
+            
+            print(f"Created VBOs for part {part_id}: vertices={len(vertices)}, faces={self.num_faces[part_id]}")
+            return True
+        except Exception as e:
+            import traceback
+            print(f"Error processing primitive to VBO for part {part_id}: {e}")
+            print(traceback.format_exc())
+            return False
+
+    def _extract_accessor_data(self, gltf, accessor, binary_data, expected_components):
+        """Helper method to extract data from a GLTF accessor with proper error handling."""
+        try:
+            # Get buffer view
+            if accessor.bufferView is None:
+                print("Accessor has no bufferView")
+                return None
+                
+            buffer_view = gltf.bufferViews[accessor.bufferView]
+            
+            # Calculate offsets and stride
+            byte_offset = (accessor.byteOffset or 0) + (buffer_view.byteOffset or 0)
+            byte_stride = buffer_view.byteStride if hasattr(buffer_view, 'byteStride') and buffer_view.byteStride else 0
+            component_type = accessor.componentType  # e.g., GL_FLOAT (5126)
+            
+            # Determine data type and size based on component type
+            component_size = 0
+            dtype = None
+            format_char = ''
+            
+            if component_type == 5120:  # BYTE
+                dtype = np.int8
+                component_size = 1
+                format_char = 'b'
+            elif component_type == 5121:  # UNSIGNED_BYTE
+                dtype = np.uint8
+                component_size = 1
+                format_char = 'B'
+            elif component_type == 5122:  # SHORT
+                dtype = np.int16
+                component_size = 2
+                format_char = 'h'
+            elif component_type == 5123:  # UNSIGNED_SHORT
+                dtype = np.uint16
+                component_size = 2
+                format_char = 'H'
+            elif component_type == 5125:  # UNSIGNED_INT
+                dtype = np.uint32
+                component_size = 4
+                format_char = 'I'
+            elif component_type == 5126:  # FLOAT
+                dtype = np.float32
+                component_size = 4
+                format_char = 'f'
+            else:
+                print(f"Unsupported component type: {component_type}")
+                return None
+                
+            # Calculate element size
+            element_size = component_size * expected_components
+            
+            # Handle stride
+            if byte_stride == 0:
+                byte_stride = element_size
+            
+            # More efficient data extraction
+            if byte_stride == element_size:
+                # If data is tightly packed, we can extract it in one go
+                start = byte_offset
+                end = start + accessor.count * element_size
+                buffer_data = binary_data[start:end]
+                
+                # If we need to convert from BYTE or SHORT to normalized float
+                if accessor.normalized and component_type in [5120, 5121, 5122, 5123]:
+                    # Convert to numpy array first
+                    array = np.frombuffer(buffer_data, dtype=dtype).reshape(-1, expected_components)
+                    
+                    # Normalize based on component type
+                    if component_type == 5120:  # BYTE: -127 to 127
+                        array = array.astype(np.float32) / 127.0
+                    elif component_type == 5121:  # UNSIGNED_BYTE: 0 to 255
+                        array = array.astype(np.float32) / 255.0
+                    elif component_type == 5122:  # SHORT: -32767 to 32767
+                        array = array.astype(np.float32) / 32767.0
+                    elif component_type == 5123:  # UNSIGNED_SHORT: 0 to 65535
+                        array = array.astype(np.float32) / 65535.0
+                    
+                    return array
+                else:
+                    # Regular conversion to numpy array
+                    return np.frombuffer(buffer_data, dtype=dtype).reshape(-1, expected_components)
+            else:
+                # If data has stride, extract elements one by one
+                data = []
+                for i in range(accessor.count):
+                    start = byte_offset + i * byte_stride
+                    end = start + element_size
+                    element_data = binary_data[start:end]
+                    if len(element_data) < element_size:
+                        print(f"Warning: Data truncated at element {i}, got {len(element_data)} bytes, expected {element_size}")
+                        break
+                    
+                    # Unpack the element data
+                    values = struct.unpack(f'{expected_components}{format_char}', element_data)
+                    data.append(values)
+                
+                # Convert to numpy array
+                array = np.array(data, dtype=dtype)
+                
+                # Apply normalization if needed
+                if accessor.normalized and component_type in [5120, 5121, 5122, 5123]:
+                    if component_type == 5120:  # BYTE
+                        array = array.astype(np.float32) / 127.0
+                    elif component_type == 5121:  # UNSIGNED_BYTE
+                        array = array.astype(np.float32) / 255.0
+                    elif component_type == 5122:  # SHORT
+                        array = array.astype(np.float32) / 32767.0
+                    elif component_type == 5123:  # UNSIGNED_SHORT
+                        array = array.astype(np.float32) / 65535.0
+                
+                return array
+            
+        except Exception as e:
+            import traceback
+            print(f"Error in _extract_accessor_data: {e}")
+            print(traceback.format_exc())
+            return None
 
     def clear_model_data(self):
-        self.mesh = None
+        """Clear all model data."""
         self.meshes.clear()
         for tex_id in self.texture_ids.values():
             if tex_id:
@@ -304,25 +449,28 @@ class ModelViewer(QOpenGLWidget):
         self.index_buffers.clear()
         self.num_faces.clear()
         self.part_names.clear()
-        self.part_visibility = {}
+        # Don't clear part_visibility - it will be handled by apply_visibility_settings
         print(f"After clear_model_data, part_visibility: {self.part_visibility}")
 
     def apply_visibility_settings(self, original_visibility, is_same_model):
-        """Apply visibility settings based on whether it’s the same model or a new one."""
+        """Apply visibility settings based on whether it's the same model or a new one."""
         current_parts = set(range(len(self.meshes)))
         config_parts = set(int(k) for k in original_visibility.keys())
         
         if is_same_model:
-            # Same model: preserve original visibility where possible
+            # Same model: preserve original visibility, only update for current parts
+            new_visibility = {}
             for part_id in current_parts:
                 if part_id in original_visibility:
-                    self.part_visibility[part_id] = original_visibility[part_id]
-                    print(f"Preserved visibility for part {part_id} (same model): {self.part_visibility[part_id]}")
+                    new_visibility[part_id] = original_visibility[part_id]
+                    print(f"Preserved visibility for part {part_id} (same model): {new_visibility[part_id]}")
                 else:
-                    self.part_visibility[part_id] = True
+                    new_visibility[part_id] = True
                     print(f"Set default visibility for new part {part_id} (same model): True")
+            self.part_visibility = new_visibility
         else:
-            # New model: apply config visibility if available, otherwise default to True
+            # New model: reset visibility and apply config settings or defaults
+            self.part_visibility = {}
             for part_id in current_parts:
                 if part_id in original_visibility:
                     self.part_visibility[part_id] = original_visibility[part_id]
@@ -330,343 +478,120 @@ class ModelViewer(QOpenGLWidget):
                 else:
                     self.part_visibility[part_id] = True
                     print(f"Set default visibility for part {part_id} (new model): True")
-            
-            # Remove obsolete parts from visibility
-            for part_id in config_parts - current_parts:
-                self.part_visibility.pop(part_id, None)
-                print(f"Removed visibility for obsolete part {part_id} (new model)")
-
-    def extract_primitive_mesh(self, gltf, primitive):
-        """Extract a trimesh.Trimesh object from a GLTF primitive."""
-        try:
-            # Check if there are buffers and buffer views
-            if not gltf.buffers or not gltf.bufferViews:
-                print("No buffer data available in GLTF file")
-                return None
-
-            # Determine if this is a GLB file (binary buffer) or GLTF (external buffer)
-            model_dir = os.path.dirname(self.model_path)
-            if gltf.buffers[0].uri is None:
-                # GLB case: binary data is embedded
-                buffer_data = gltf.binary_blob()
-                if buffer_data is None:
-                    print("Expected binary blob for GLB file, but none found")
-                    return None
-            else:
-                # GLTF case: load external buffer file
-                buffer_uri = gltf.buffers[0].uri
-                buffer_path = os.path.join(model_dir, buffer_uri)
-                if not os.path.exists(buffer_path):
-                    print(f"External buffer file not found: {buffer_path}")
-                    return None
-                with open(buffer_path, 'rb') as f:
-                    buffer_data = f.read()
-
-            # Extract vertex positions (required)
-            if not hasattr(primitive.attributes, 'POSITION') or primitive.attributes.POSITION is None:
-                print("Primitive has no POSITION attribute")
-                return None
-
-            pos_accessor = gltf.accessors[primitive.attributes.POSITION]
-            pos_buffer_view = gltf.bufferViews[pos_accessor.bufferView]
-            pos_offset = pos_buffer_view.byteOffset + (pos_accessor.byteOffset or 0)
-            pos_count = pos_accessor.count
-            pos_type = pos_accessor.componentType  # e.g., GL_FLOAT (5126)
-            pos_size = 3  # Assuming vec3 for positions
-
-            # Read vertex positions
-            dtype = np.float32 if pos_type == 5126 else np.float16
-            pos_bytes = buffer_data[pos_offset:pos_offset + pos_buffer_view.byteLength]
-            vertices = np.frombuffer(pos_bytes, dtype=dtype).reshape(pos_count, pos_size)
-
-            # Extract faces (indices)
-            faces = None
-            if primitive.indices is not None:
-                idx_accessor = gltf.accessors[primitive.indices]
-                idx_buffer_view = gltf.bufferViews[idx_accessor.bufferView]
-                idx_offset = idx_buffer_view.byteOffset + (idx_accessor.byteOffset or 0)
-                idx_count = idx_accessor.count
-                idx_type = idx_accessor.componentType  # e.g., GL_UNSIGNED_INT (5125)
-
-                # Read indices
-                dtype = {5121: np.uint8, 5123: np.uint16, 5125: np.uint32}.get(idx_type, np.uint32)
-                idx_bytes = buffer_data[idx_offset:idx_offset + idx_buffer_view.byteLength]
-                indices = np.frombuffer(idx_bytes, dtype=dtype)
-                faces = indices.reshape(-1, 3)  # Assuming triangles
-
-            # Extract normals (optional)
-            normals = None
-            if hasattr(primitive.attributes, 'NORMAL') and primitive.attributes.NORMAL is not None:
-                norm_accessor = gltf.accessors[primitive.attributes.NORMAL]
-                norm_buffer_view = gltf.bufferViews[norm_accessor.bufferView]
-                norm_offset = norm_buffer_view.byteOffset + (norm_accessor.byteOffset or 0)
-                norm_count = norm_accessor.count
-
-                norm_bytes = buffer_data[norm_offset:norm_offset + norm_buffer_view.byteLength]
-                normals = np.frombuffer(norm_bytes, dtype=np.float32).reshape(norm_count, 3)
-
-            # Extract UV coordinates (optional)
-            uv = None
-            if hasattr(primitive.attributes, 'TEXCOORD_0') and primitive.attributes.TEXCOORD_0 is not None:
-                uv_accessor = gltf.accessors[primitive.attributes.TEXCOORD_0]
-                uv_buffer_view = gltf.bufferViews[uv_accessor.bufferView]
-                uv_offset = uv_buffer_view.byteOffset + (uv_accessor.byteOffset or 0)
-                uv_count = uv_accessor.count
-
-                uv_bytes = buffer_data[uv_offset:uv_offset + uv_buffer_view.byteLength]
-                uv = np.frombuffer(uv_bytes, dtype=np.float32).reshape(uv_count, 2)
-                # Make a writable copy before modifying
-                uv = uv.copy()
-                # Flip Y coordinate to match OpenGL convention
-                uv[:, 1] = 1.0 - uv[:, 1]
-
-            # Create trimesh object
-            mesh = trimesh.Trimesh(
-                vertices=vertices,
-                faces=faces if faces is not None else None,
-                vertex_normals=normals,
-                process=False  # Avoid unnecessary processing
-            )
-
-            # Attach UV coordinates if present
-            if uv is not None:
-                mesh.visual = trimesh.visual.TextureVisuals(uv=uv)
-
-            print(f"Extracted primitive: vertices={len(vertices)}, faces={len(faces) if faces is not None else 0}")
-            return mesh
-
-        except Exception as e:
-            print(f"Error extracting primitive mesh: {e}")
-            return None
-    
-    def load_animations(self, gltf):
-        """Load animations from GLTF file."""
-        if not hasattr(gltf, 'animations') or not gltf.animations:
-            print("No animations found in GLTF file")
-            return
-            
-        print(f"Found {len(gltf.animations)} animations")
         
-        # For now, just store the animation data 
-        # Implementation will be expanded later
-        self.animations = gltf.animations
-        
-    def apply_animation(self):
-        """Apply the current animation to the model."""
-        # This is a placeholder for animation implementation
-        # Will be expanded in the future
-        pass
-            
-    def simplify_model(self, mesh):
-        """Simplify the model using available Trimesh methods."""
+        # Log final state
+        print(f"Final part_visibility after applying settings: {self.part_visibility}")
+
+    def load_gltf_textures(self, gltf, path, model_dir):
+        """Improved method to load textures from GLTF/GLB files."""
         try:
-            print("Attempting to simplify model...")
-
-            # Safety check
-            if mesh is None or not hasattr(mesh, 'vertices'):
-                print("No valid mesh to simplify")
-                return
-
-            # Simple approach: subsample vertices
-            if len(mesh.vertices) > 10000:
-                target_faces = int(len(mesh.faces) * 0.5)  # Reduce by half
-
-                # Try different simplification methods
-                if hasattr(mesh, 'simplify'):
-                    print("Using mesh.simplify method")
-                    mesh = mesh.simplify(target_faces)
-                elif hasattr(trimesh, 'simplify'):
-                    print("Using trimesh.simplify method")
-                    mesh = trimesh.simplify.simplify_quadratic_decimation(mesh, target_faces)
-                else:
-                    print("No simplification method available")
-
-                print(f"Model simplified to {len(mesh.vertices)} vertices")
-                return mesh
-            return mesh
-        except Exception as e:
-            print(f"Error simplifying model: {e}")
-            # Keep the original model if simplification fails
-            return mesh
-        
-    def create_vbos_for_part(self, part_id, mesh):
-        """Create Vertex Buffer Objects for efficient rendering of a specific part."""
-        try:
-            if mesh is None:
-                return
-
-            # Create VBO for vertices
-            vertices = np.array(mesh.vertices, dtype=np.float32)
-            self.vertex_vbos[part_id] = vbo.VBO(vertices)
-
-            # Create VBO for normals if available
-            if hasattr(mesh, 'vertex_normals') and mesh.vertex_normals is not None:
-                normals = np.array(mesh.vertex_normals, dtype=np.float32)
-                self.normal_vbos[part_id] = vbo.VBO(normals)
-            else:
-                self.normal_vbos[part_id] = None
-
-            # Create VBO for texture coordinates if available
-            self.uv_vbos[part_id] = None
-            if hasattr(mesh, 'visual') and hasattr(mesh.visual, 'uv'):
-                if mesh.visual.uv is not None and len(mesh.visual.uv) > 0:
-                    uvs = np.array(mesh.visual.uv, dtype=np.float32)
-                    # Flip Y coordinates if needed
-                    # uvs[:, 1] = 1.0 - uvs[:, 1]  # Uncomment this if textures appear upside down
-                    self.uv_vbos[part_id] = vbo.VBO(uvs)
-                    print(f"Created UV VBO for part {part_id} with {len(uvs)} coordinates")
-                else:
-                    print(f"Part {part_id} has UV attribute but no UV data")
-            else:
-                print(f"Part {part_id} has no UV coordinates")
-
-            # Create index buffer
-            if hasattr(mesh, 'faces') and mesh.faces is not None:
-                self.index_buffers[part_id] = np.array(mesh.faces, dtype=np.uint32).flatten()
-                self.num_faces[part_id] = len(mesh.faces)
-            else:
-                self.index_buffers[part_id] = None
-                self.num_faces[part_id] = 0
-
-            print(f"VBOs created successfully for part {part_id}: vertices={len(vertices)}, faces={self.num_faces[part_id]}")
-        except Exception as e:
-            print(f"Error creating VBOs for part {part_id}: {e}")
-            self.vertex_vbos[part_id] = None
-            self.normal_vbos[part_id] = None
-            self.uv_vbos[part_id] = None
-            self.index_buffers[part_id] = None
-
-    def load_gltf_textures(self, path, model_dir):
-        """Load textures from GLTF file with improved error handling."""
-        try:
-            gltf = GLTF2().load(path)
-            texture_count = 0
-
-            # Print path for debugging
             print(f"Loading textures from: {path}")
             print(f"Model directory: {model_dir}")
 
-            # Process materials to understand texture usage
+            # Check if this is a GLB file
+            is_glb = path.lower().endswith('.glb')
+
+            # Create a mapping from texture index to image index
+            texture_to_image = {}
+            if hasattr(gltf, 'textures') and gltf.textures:
+                for texture_idx, texture in enumerate(gltf.textures):
+                    if hasattr(texture, 'source') and texture.source is not None:
+                        texture_to_image[texture_idx] = texture.source
+                        print(f"Texture {texture_idx} uses image {texture.source}")
+
+            # Create a mapping from material index to texture indices
+            material_to_textures = {}
             if hasattr(gltf, 'materials') and gltf.materials:
-                print(f"Found {len(gltf.materials)} materials")
                 for material_idx, material in enumerate(gltf.materials):
-                    # Check for textures in this material
+                    material_to_textures[material_idx] = set()
+
+                    # Check for PBR textures
                     if hasattr(material, 'pbrMetallicRoughness'):
                         pbr = material.pbrMetallicRoughness
-                        
+
                         # Base color texture
                         if hasattr(pbr, 'baseColorTexture') and pbr.baseColorTexture is not None:
                             if hasattr(pbr.baseColorTexture, 'index'):
                                 texture_idx = pbr.baseColorTexture.index
+                                material_to_textures[material_idx].add(texture_idx)
                                 print(f"Material {material_idx} uses texture {texture_idx} for baseColor")
-                        
-                        # Metallic roughness texture
-                        if hasattr(pbr, 'metallicRoughnessTexture') and pbr.metallicRoughnessTexture is not None:
-                            if hasattr(pbr.metallicRoughnessTexture, 'index'):
-                                texture_idx = pbr.metallicRoughnessTexture.index
-                                print(f"Material {material_idx} uses texture {texture_idx} for metallicRoughness")
-                    
-                    # Normal map
-                    if hasattr(material, 'normalTexture') and material.normalTexture is not None:
-                        if hasattr(material.normalTexture, 'index'):
-                            texture_idx = material.normalTexture.index
-                            print(f"Material {material_idx} uses texture {texture_idx} for normal")
-                    
-                    # Emissive texture
-                    if hasattr(material, 'emissiveTexture') and material.emissiveTexture is not None:
-                        if hasattr(material.emissiveTexture, 'index'):
-                            texture_idx = material.emissiveTexture.index
-                            print(f"Material {material_idx} uses texture {texture_idx} for emissive")
-                    
-                    # Occlusion texture
-                    if hasattr(material, 'occlusionTexture') and material.occlusionTexture is not None:
-                        if hasattr(material.occlusionTexture, 'index'):
-                            texture_idx = material.occlusionTexture.index
-                            print(f"Material {material_idx} uses texture {texture_idx} for occlusion")
 
-            # Process textures
-            if hasattr(gltf, 'textures') and gltf.textures:
-                print(f"Found {len(gltf.textures)} textures")
-                for texture_idx, texture in enumerate(gltf.textures):
-                    if hasattr(texture, 'source') and texture.source is not None:
-                        image_idx = texture.source
-                        print(f"Texture {texture_idx} uses image {image_idx}")
+                    # Other texture types (normal, emissive, etc.)
+                    for texture_type in ['normalTexture', 'emissiveTexture', 'occlusionTexture']:
+                        if hasattr(material, texture_type) and getattr(material, texture_type) is not None:
+                            texture_ref = getattr(material, texture_type)
+                            if hasattr(texture_ref, 'index'):
+                                texture_idx = texture_ref.index
+                                material_to_textures[material_idx].add(texture_idx)
+                                print(f"Material {material_idx} uses texture {texture_idx} for {texture_type}")
 
-            # Handle external textures
+            # Process external image files first
             if hasattr(gltf, 'images') and gltf.images:
-                print(f"Found {len(gltf.images)} images")
                 for image_idx, image in enumerate(gltf.images):
-                    if hasattr(image, 'uri') and image.uri:
-                        # Skip data URIs
-                        if image.uri.startswith('data:'):
-                            continue
-
+                    # Skip data URIs for now
+                    if hasattr(image, 'uri') and image.uri and not image.uri.startswith('data:'):
                         decoded_uri = urllib.parse.unquote(image.uri)
-                        print(f"Image {image_idx} - Original URI: {image.uri}")
-                        print(f"Image {image_idx} - Decoded URI: {decoded_uri}")
-
-                        # Construct full path to texture
                         image_path = os.path.join(model_dir, decoded_uri)
-                        print(f"Looking for texture at: {image_path}")
 
-                        # Check if file exists
                         if os.path.exists(image_path):
-                            print(f"Found texture file: {image_path}")
+                            print(f"Loading external texture: {image_path}")
                             texture_id = self.load_texture(image_path)
                             if texture_id:
                                 self.texture_ids[image_idx] = texture_id
-                                texture_count += 1
-                        else:
-                            print(f"Texture file not found: {image_path}")
+                                print(f"Loaded external texture {image_idx} with OpenGL ID {texture_id}")
 
-            # If this is a GLB file, try to extract embedded textures
-            if path.lower().endswith('.glb'):
-                print("Trying to extract embedded textures from GLB file")
-                try:
-                    # Create a temporary directory for extracting textures
-                    import tempfile
-                    temp_dir = tempfile.mkdtemp()
+            # Handle embedded images in GLB
+            if is_glb and hasattr(gltf, 'images') and gltf.images:
+                binary_blob = gltf.binary_blob()
+                if binary_blob is not None:
+                    for image_idx, image in enumerate(gltf.images):
+                        # Skip images we've already handled
+                        if image_idx in self.texture_ids:
+                            continue
+                        
+                        # Handle embedded image in GLB
+                        if hasattr(image, 'bufferView') and image.bufferView is not None:
+                            buffer_view = gltf.bufferViews[image.bufferView]
+                            buffer_offset = buffer_view.byteOffset or 0
+                            buffer_length = buffer_view.byteLength
 
-                    # Use existing gltf object instead of reloading
-                    if hasattr(gltf, 'export_textures'):
-                        gltf.export_textures(temp_dir)
+                            # Extract the image data
+                            image_data = binary_blob[buffer_offset:buffer_offset + buffer_length]
 
-                        # Find all extracted textures
-                        for i, texture_file in enumerate(os.listdir(temp_dir)):
-                            texture_path = os.path.join(temp_dir, texture_file)
-                            print(f"Found embedded texture: {texture_path}")
-                            texture_id = self.load_texture(texture_path)
-                            if texture_id:
-                                self.texture_ids[i] = texture_id
-                                texture_count += 1
+                            if image_data:
+                                # Get mime type
+                                mime_type = 'image/png'  # Default
+                                if hasattr(image, 'mimeType') and image.mimeType:
+                                    mime_type = image.mimeType
 
-                        # Cleanup temp directory
-                        import shutil
-                        shutil.rmtree(temp_dir)
-                    else:
-                        print("GLTF object does not support export_textures method")
-                except Exception as e:
-                    print(f"Error extracting GLB textures: {e}")
+                                # Create a PIL Image from the binary data
+                                try:
+                                    img = Image.open(io.BytesIO(image_data))
+                                    print(f"Successfully loaded embedded image {image_idx} from buffer view {image.bufferView}")
 
-            print(f"Successfully loaded {texture_count} textures from GLTF/GLB")
+                                    # Create OpenGL texture
+                                    texture_id = self.create_texture_from_image(img)
+                                    if texture_id:
+                                        self.texture_ids[image_idx] = texture_id
+                                        print(f"Created texture {image_idx} with OpenGL ID {texture_id} from embedded image")
+                                except Exception as e:
+                                    print(f"Failed to load embedded image {image_idx}: {e}")
+
+            # Map texture images to materials for rendering
+            for material_idx, texture_indices in material_to_textures.items():
+                for texture_idx in texture_indices:
+                    if texture_idx in texture_to_image:
+                        image_idx = texture_to_image[texture_idx]
+                        if image_idx in self.texture_ids:
+                            # If we have multiple textures for a material, prioritize baseColor
+                            # (This is a simplification - a proper PBR renderer would use all textures)
+                            print(f"Material {material_idx} will use image {image_idx} with texture ID {self.texture_ids[image_idx]}")
+
+            print(f"Texture loading completed. Loaded {len(self.texture_ids)} textures.")
         except Exception as e:
-            print(f"Error loading GLTF textures: {e}")
-
-    def load_generic_textures(self, model_dir):
-        """Load textures for non-GLTF models."""
-        if hasattr(self.mesh, 'visual') and hasattr(self.mesh.visual, 'material'):
-            if hasattr(self.mesh.visual.material, 'image'):
-                image = self.mesh.visual.material.image
-                if isinstance(image, str):
-                    image_path = os.path.join(model_dir, image)
-                    if os.path.exists(image_path):
-                        texture_id = self.load_texture(image_path)
-                        self.texture_ids[0] = texture_id
-                        self.material_map[0] = 0  # Map the first part to the first texture
-                elif hasattr(image, 'convert'):
-                    texture_id = self.create_texture_from_image(image)
-                    self.texture_ids[0] = texture_id
-                    self.material_map[0] = 0  # Map the first part to the first texture
+            import traceback
+            print(f"Error in load_gltf_textures: {e}")
+            print(traceback.format_exc())
 
     def load_texture(self, path):
         """Load a texture from file with better error handling."""
@@ -703,7 +628,7 @@ class ModelViewer(QOpenGLWidget):
         except Exception as e:
             print(f"Error loading texture {path}: {e}")
             return None
-
+        
     def create_texture_from_image(self, image):
         """Create an OpenGL texture from a PIL Image."""
         texture_id = glGenTextures(1)
@@ -732,42 +657,85 @@ class ModelViewer(QOpenGLWidget):
         
         return texture_id
 
-    def scale_model(self):
-        """Scale all meshes to fit the view."""
-        if not self.meshes:
-            return
-        
-        # Find the overall bounds of all meshes
-        all_vertices = np.vstack([mesh.vertices for mesh in self.meshes if hasattr(mesh, 'vertices')])
-        if len(all_vertices) == 0:
+    def load_animations(self, gltf):
+        """Load animations from GLTF file."""
+        if not hasattr(gltf, 'animations') or not gltf.animations:
+            print("No animations found in GLTF file")
             return
             
+        print(f"Found {len(gltf.animations)} animations")
+        
+        # For now, just store the animation data 
+        # Implementation will be expanded later
+        self.animations = gltf.animations
+        
+    def apply_animation(self):
+        """Apply the current animation to the model."""
+        # This is a placeholder for animation implementation
+        # Will be expanded in the future
+        pass
+    
+    def scale_model(self):
+        """Scale all meshes to fit the view using VBO data."""
+        if not self.meshes or not self.vertex_vbos:
+            print("No meshes or vertex VBOs to scale")
+            return
+
+        # Collect all vertex data from VBOs
+        all_vertices = []
+        for part_id in range(len(self.meshes)):
+            if part_id in self.vertex_vbos and self.vertex_vbos[part_id] is not None:
+                vbo = self.vertex_vbos[part_id]
+                vbo.bind()
+                # Get the data from the VBO (assuming float32, 3 components per vertex)
+                vertex_data = np.frombuffer(
+                    vbo.data, dtype=np.float32
+                ).reshape(-1, 3)
+                vbo.unbind()
+                all_vertices.append(vertex_data)
+
+        if not all_vertices:
+            print("No vertex data found in VBOs")
+            return
+
+        # Stack all vertices to compute bounds
+        all_vertices = np.vstack(all_vertices)
         min_bounds = np.min(all_vertices, axis=0)
         max_bounds = np.max(all_vertices, axis=0)
         bounds = np.vstack((min_bounds, max_bounds))
-        
+
         size_range = bounds[1] - bounds[0]
         if np.max(size_range) == 0:
+            print("Model has zero size range, skipping scaling")
             return
-            
-        # Use a larger scale factor for a bigger model
+
+        # Use a scale factor to fit the view (adjust as needed)
         scale = 4.0 / max(size_range)
-        
+
         # Calculate the centroid of all vertices
         centroid = np.mean(all_vertices, axis=0)
-        
-        # Scale and center each mesh
-        for part_id, mesh in enumerate(self.meshes):
-            if hasattr(mesh, 'vertices') and len(mesh.vertices) > 0:
-                # Apply scaling
-                mesh.vertices *= scale
-                
-                # Center the model
-                mesh.vertices -= centroid * scale
-                
-                # Update VBOs after scaling
-                if part_id in self.vertex_vbos and self.vertex_vbos[part_id] is not None:
-                    self.create_vbos_for_part(part_id, mesh)
+
+        # Scale and center each part’s vertex data
+        for part_id in range(len(self.meshes)):
+            if part_id in self.vertex_vbos and self.vertex_vbos[part_id] is not None:
+                vbo = self.vertex_vbos[part_id]
+                vbo.bind()
+                # Get current vertex data
+                vertices = np.frombuffer(
+                    vbo.data, dtype=np.float32
+                ).reshape(-1, 3)
+
+                # Apply scaling and centering
+                vertices *= scale
+                vertices -= centroid * scale
+
+                # Update the VBO with new data
+                new_data = vertices.astype(np.float32).tobytes()
+                glBufferData(GL_ARRAY_BUFFER, len(new_data), new_data, GL_STATIC_DRAW)
+                vbo.unbind()
+                print(f"Scaled and updated VBO for part {part_id}: {len(vertices)} vertices")
+
+        self.update()
 
     def mousePressEvent(self, event):
         """Handle mouse press events for model interaction."""
@@ -803,7 +771,7 @@ class ModelViewer(QOpenGLWidget):
     
     def sizeHint(self):
         """Provide a default size for the widget."""
-        return QSize(400, 400)
+        return QSize(300, 300)
         
     def minimumSizeHint(self):
         """Provide a minimum size for the widget."""
