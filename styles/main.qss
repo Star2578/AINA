@@ -9,3 +9,8 @@ QToolButton {
 QToolButton:hover {
     background-color: #ff8566;
 }
+
+QLineEdit {
+    color: black;
+    background-color: white;
+}

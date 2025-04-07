@@ -58,19 +58,53 @@ class Settings(QWidget):
         general_layout.addStretch()
         general_widget.setLayout(general_layout)
         self.stack.addWidget(general_widget)
+        # TODO : Implement font, color theme
+        
 
         # LLM Model (placeholder)
+        # TODO : Implement 
+        # - Overhead Prompt : How should AINA respond
+        # #
         llm_widget = QWidget()
         llm_layout = QVBoxLayout()
-        llm_layout.addWidget(QLabel("Not implemented yet"))
+        llm_layout.addWidget(QLabel("Overhead Prompt:"))
+        self.llm_prompt = QLineEdit(self.aina.config["llm_prompt"])
+        self.llm_prompt.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
+        llm_layout.addWidget(self.llm_prompt)
+        apply_llm_btn = QPushButton("Apply")
+        apply_llm_btn.clicked.connect(self.apply_llm_settings)
+        llm_layout.addWidget(apply_llm_btn)
         llm_layout.addStretch()
         llm_widget.setLayout(llm_layout)
         self.stack.addWidget(llm_widget)
 
         # Generation (placeholder)
+        # TODO : Implement
+        # - Top K : Creativity
+        # - Max Length : Respond length
+        # #
         gen_widget = QWidget()
         gen_layout = QVBoxLayout()
-        gen_layout.addWidget(QLabel("Not implemented yet"))
+        gen_layout.addWidget(QLabel("Generation Settings:"))
+        
+        top_k_layout = QHBoxLayout()
+        top_k_layout.addWidget(QLabel("Top K (Creativity):"))
+        self.top_k = QLineEdit(str(self.aina.config["llm_top_k"]))
+        self.top_k.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
+        top_k_layout.addWidget(self.top_k)
+        
+        max_length_layout = QHBoxLayout()
+        max_length_layout.addWidget(QLabel("Max Length:"))
+        self.max_length = QLineEdit(str(self.aina.config["llm_max_length"]))
+        self.max_length.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
+        max_length_layout.addWidget(self.max_length)
+        
+        apply_gen_btn = QPushButton("Apply")
+        apply_gen_btn.clicked.connect(self.apply_llm_settings)
+        
+        gen_layout.addLayout(top_k_layout)
+        gen_layout.addLayout(max_length_layout)
+        gen_layout.addWidget(apply_gen_btn)
         gen_layout.addStretch()
         gen_widget.setLayout(gen_layout)
         self.stack.addWidget(gen_widget)
@@ -94,6 +128,16 @@ class Settings(QWidget):
             self.aina.save_config()
         except ValueError:
             print("Invalid resolution values")
+
+    def apply_llm_settings(self):
+        """Apply LLM settings and save to config"""
+        try:
+            self.aina.llm.prompt = self.llm_prompt.text()
+            self.aina.llm.top_k = int(self.top_k.text())
+            self.aina.llm.max_length = int(self.max_length.text())
+            self.aina.save_config()
+        except ValueError:
+            print("Invalid generation values")
 
     def restore_default_model(self):
         self.aina.viewer.load_model(self.aina.default_model_path)
