@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QApplication, QToolButton, QLineEdit
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QApplication, QToolButton, QLineEdit, QDialog, QTextBrowser, QTextEdit
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPropertyAnimation
 from PyQt6.QtGui import QIcon, QCursor
 from src.llm.llm import LLM
 from src.model_viewer import ModelViewer
@@ -19,6 +19,7 @@ class AINA(QWidget):
         self.default_model_path = "assets/models/king_triton/scene.gltf"
         self.viewer = None
         self.drag_area_size = 30
+        self.chat_history = []
         
         self.progress_updated.emit(20, "Initializing application...")
         self.load_config()
@@ -71,7 +72,7 @@ class AINA(QWidget):
         
         # Chat system (Left)
         chat_layout = QVBoxLayout()
-        self.chat_bubble = QLabel("")
+        self.chat_bubble = QTextBrowser()
         self.chat_bubble.setStyleSheet("""
             background-color: #ff5733;
             color: black;
@@ -79,11 +80,12 @@ class AINA(QWidget):
             padding: 8px;
             margin: 5px;
         """)
-        self.chat_bubble.setWordWrap(True)
-        self.chat_bubble.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.chat_bubble.setOpenExternalLinks(False)
+        self.chat_bubble.setReadOnly(True)
+        self.chat_bubble.setVisible(False)
         
         chat_input_layout = QHBoxLayout()
-        self.chat_input = QLineEdit()
+        self.chat_input = QTextEdit()
         self.chat_input.setStyleSheet("""
             background-color: #e0e0e0;
             border: 1px solid #808080;
@@ -91,11 +93,14 @@ class AINA(QWidget):
             border-radius: 5px;
             padding: 5px;
         """)
-        self.chat_input.returnPressed.connect(self.send_message)
+        self.chat_input.setFixedWidth(300)
+        self.chat_input.setFixedHeight(40)
+        self.chat_input.keyPressEvent = self.handle_input_keypress
         
-        send_button = QPushButton(">")
-        send_button.setFixedSize(30, 30)
-        send_button.setStyleSheet("""
+        self.send_button = QPushButton()
+        self.send_button.setIcon(QIcon("assets/icons/send.png"))
+        self.send_button.setFixedSize(30, 30)
+        self.send_button.setStyleSheet("""
             QPushButton {
                 background-color: #ff5733;
                 color: white;
@@ -105,10 +110,10 @@ class AINA(QWidget):
                 background-color: #ff8566;
             }
         """)
-        send_button.clicked.connect(self.send_message)
+        self.send_button.clicked.connect(self.send_message)
         
         chat_input_layout.addWidget(self.chat_input)
-        chat_input_layout.addWidget(send_button)
+        chat_input_layout.addWidget(self.send_button)
         
         chat_layout.addWidget(self.chat_bubble)
         chat_layout.addStretch()
@@ -196,11 +201,13 @@ class AINA(QWidget):
         self.config.setdefault("model_path", self.default_model_path)
         self.config.setdefault("part_visibility", {})
         self.config.setdefault("allow_overflow", False)
+        self.config.setdefault("fade_dialogue", False)
         self.config.setdefault("pos_x", vw(70))
         self.config.setdefault("pos_y", vh(70))
         self.config.setdefault("llm_prompt", "You are AINA, a helpful desktop pet assistant.")
         self.config.setdefault("llm_max_length", 100)
         self.config.setdefault("llm_top_k", 40)
+        self.config.setdefault("llm_tempurature", 0.7)
 
         if not os.path.exists(self.config_file):
             self.save_config()
@@ -212,11 +219,14 @@ class AINA(QWidget):
         self.config["height"] = self.height()
         self.config["model_path"] = self.viewer.model_path if self.viewer else self.default_model_path
         self.config["part_visibility"] = self.viewer.part_visibility if self.viewer else {}
+        self.config["allow_overflow"] = self.settings.allow_overflow.isChecked()
+        self.config["fade_dialogue"] = self.settings.fade_dialogue.isChecked()
         self.config["pos_x"] = self.x()
         self.config["pos_y"] = self.y()
-        self.config["llm_prompt"] = self.settings.llm_prompt.text() if hasattr(self.settings, 'llm_prompt') else self.config["llm_prompt"]
+        self.config["llm_prompt"] = self.settings.llm_prompt.toPlainText() if hasattr(self.settings, 'llm_prompt') else self.config["llm_prompt"]
         self.config["llm_max_length"] = int(self.settings.max_length.text()) if hasattr(self.settings, 'max_length') else self.config["llm_max_length"]
         self.config["llm_top_k"] = int(self.settings.top_k.text()) if hasattr(self.settings, 'top_k') else self.config["llm_top_k"]
+        self.config["llm_tempurature"] = float(self.settings.tempurature.text()) if hasattr(self.settings, 'tempurature') else self.config["llm_tempurature"]
         
         try:
             with open(self.config_file, 'w') as f:
@@ -226,11 +236,25 @@ class AINA(QWidget):
 
     def send_message(self):
         """Send message from input to LLM and display response"""
-        message = self.chat_input.text().strip()
+        message = self.chat_input.toPlainText().strip()
         if message:
-            response = self.llm.process_message(message)
-            self.chat_bubble.setText(response)
-            self.chat_input.clear()
+            self.chat_input.setEnabled(False)
+            self.send_button.setEnabled(False)
+            self.send_button.setIcon(QIcon("assets/icons/loading.png"))
+            
+            QTimer.singleShot(0, lambda: self.process_message(message))
+
+    def process_message(self, message):
+        """Process the message and update UI"""
+        response = self.llm.process_message(message)
+        self.chat_history.append(f"User: {message}\nAINA: {response}")
+        self.chat_bubble.setPlainText(response)
+        self.chat_bubble.setVisible(True)
+        self.chat_input.clear()
+        
+        self.chat_input.setEnabled(True)
+        self.send_button.setEnabled(True)
+        self.send_button.setIcon(QIcon("assets/icons/send.png"))
 
     def quit(self):
         QApplication.quit()
@@ -239,6 +263,13 @@ class AINA(QWidget):
         """Override close event to save config."""
         self.save_config()
         super().closeEvent(event)
+
+    def handle_input_keypress(self, event):
+        """Custom keypress handling for QTextEdit"""
+        if event.key() == Qt.Key.Key_Return and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+            self.send_message()
+        else:
+            QTextEdit.keyPressEvent(self.chat_input, event)
 
     def open_settings(self):
         """Open AINA settings interface."""
@@ -250,10 +281,37 @@ class AINA(QWidget):
             
     def open_chatlogs(self):
         """Open AINA chatlogs interface."""
+        chatlog_dialog = QDialog(self)
+        chatlog_dialog.setWindowTitle("Chat Logs")
+        chatlog_dialog.setFixedSize(400, 300)
+        layout = QVBoxLayout()
+
+        log_display = QTextBrowser()
+        log_display.setStyleSheet("""
+            background-color: #e0e0e0;
+            border: 1px solid #808080;
+            border-radius: 5px;
+            padding: 5px;
+            color: black;
+        """)
+        log_display.setText("\n\n".join(self.chat_history))
+
+        close_button = QPushButton("Close")
+        close_button.setStyleSheet("""
+            QPushButton {background-color: #ff5733; color: white; border-radius: 5px; padding: 3px;}
+            QPushButton:pressed {background-color: #ff8566;}
+        """)
+        close_button.clicked.connect(chatlog_dialog.close)
+
+        layout.addWidget(log_display)
+        layout.addWidget(close_button)
+        chatlog_dialog.setLayout(layout)
+        chatlog_dialog.exec()
         
     def open_newchat(self):
         """Call function from LLM class"""
         self.llm.new_chat()
+        self.chat_history.clear()
         
     def open_customizer(self):
         """Open the model customization interface."""

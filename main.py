@@ -19,7 +19,7 @@ class LoadingWindow(QWidget):
             QLabel {
                 font-size: 20px;
                 font-weight: bold;
-            }                   
+            }
         """)
         layout.addWidget(title)
         

@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget, QLabel, QLineEdit, QFileDialog, QCheckBox
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget, QLabel, QLineEdit, QFileDialog, QCheckBox, QTextEdit
 from PyQt6.QtCore import Qt, QPoint
 
 class Settings(QWidget):
@@ -6,7 +6,7 @@ class Settings(QWidget):
         super().__init__()
         self.aina = aina
         self.setWindowTitle("AINA Settings")
-        self.setFixedSize(300, 200)
+        self.setFixedSize(400, 300)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         
         self.old_pos = None
@@ -49,12 +49,24 @@ class Settings(QWidget):
         self.height_input = QLineEdit(str(self.aina.height()))
         self.allow_overflow = QCheckBox("Allow Overflow")
         self.allow_overflow.setChecked(self.aina.config["allow_overflow"])
+        self.fade_dialogue = QCheckBox("Fade Dialogue Bubble")
+        self.fade_dialogue.setChecked(self.aina.config["fade_dialogue"])
+        
         general_layout.addWidget(self.width_input)
         general_layout.addWidget(self.height_input)
         general_layout.addWidget(self.allow_overflow)
-        apply_btn = QPushButton("Apply")
-        apply_btn.clicked.connect(self.apply_resolution)
-        general_layout.addWidget(apply_btn)
+        general_layout.addWidget(self.fade_dialogue)
+        
+        self.general_apply_btn = QPushButton("Apply")
+        self.general_apply_btn.setStyleSheet("""
+            QPushButton {background-color: #ff5733; color: white; border-radius: 5px; padding: 5px;}
+            QPushButton:pressed {background-color: #ff8566;}
+            QPushButton:disabled {background-color: #8c8c8c; color: #cccccc;}
+        """)
+        self.general_apply_btn.clicked.connect(self.apply_resolution)
+        self.general_apply_btn.setEnabled(False)
+        
+        general_layout.addWidget(self.general_apply_btn)
         general_layout.addStretch()
         general_widget.setLayout(general_layout)
         self.stack.addWidget(general_widget)
@@ -64,16 +76,31 @@ class Settings(QWidget):
         # LLM Model (placeholder)
         # TODO : Implement 
         # - Overhead Prompt : How should AINA respond
-        # #
+
         llm_widget = QWidget()
         llm_layout = QVBoxLayout()
         llm_layout.addWidget(QLabel("Overhead Prompt:"))
-        self.llm_prompt = QLineEdit(self.aina.config["llm_prompt"])
-        self.llm_prompt.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
+        self.llm_prompt = QTextEdit(self.aina.config["llm_prompt"])
+        self.llm_prompt.setStyleSheet("""
+            background-color: #e0e0e0;
+            color: black;
+            border: 1px solid #808080;
+            border-radius: 5px;
+            padding: 5px;
+        """)
+        self.llm_prompt.setFixedHeight(100)
+        
+        self.llm_apply_btn = QPushButton("Apply")
+        self.llm_apply_btn.setStyleSheet("""
+            QPushButton {background-color: #ff5733; color: white; border-radius: 5px; padding: 5px;}
+            QPushButton:pressed {background-color: #ff8566;}
+            QPushButton:disabled {background-color: #8c8c8c; color: #cccccc;}
+        """)
+        self.llm_apply_btn.clicked.connect(self.apply_llm_settings)
+        self.llm_apply_btn.setEnabled(False)
+        
         llm_layout.addWidget(self.llm_prompt)
-        apply_llm_btn = QPushButton("Apply")
-        apply_llm_btn.clicked.connect(self.apply_llm_settings)
-        llm_layout.addWidget(apply_llm_btn)
+        llm_layout.addWidget(self.llm_apply_btn)
         llm_layout.addStretch()
         llm_widget.setLayout(llm_layout)
         self.stack.addWidget(llm_widget)
@@ -81,8 +108,9 @@ class Settings(QWidget):
         # Generation (placeholder)
         # TODO : Implement
         # - Top K : Creativity
+        # - Tempurature : Randomness
         # - Max Length : Respond length
-        # #
+        
         gen_widget = QWidget()
         gen_layout = QVBoxLayout()
         gen_layout.addWidget(QLabel("Generation Settings:"))
@@ -93,21 +121,45 @@ class Settings(QWidget):
         self.top_k.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
         top_k_layout.addWidget(self.top_k)
         
+        tempurature_layout = QHBoxLayout()
+        tempurature_layout.addWidget(QLabel("Tempurature (Randomness):"))
+        self.tempurature = QLineEdit(str(self.aina.config["llm_tempurature"]))
+        self.tempurature.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
+        tempurature_layout.addWidget(self.tempurature)
+        
         max_length_layout = QHBoxLayout()
         max_length_layout.addWidget(QLabel("Max Length:"))
         self.max_length = QLineEdit(str(self.aina.config["llm_max_length"]))
         self.max_length.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
         max_length_layout.addWidget(self.max_length)
         
-        apply_gen_btn = QPushButton("Apply")
-        apply_gen_btn.clicked.connect(self.apply_llm_settings)
+        self.gen_apply_btn = QPushButton("Apply")
+        self.gen_apply_btn.setStyleSheet("""
+            QPushButton {background-color: #ff5733; color: white; border-radius: 5px; padding: 5px;}
+            QPushButton:pressed {background-color: #ff8566;}
+            QPushButton:disabled {background-color: #8c8c8c; color: #cccccc;}
+        """)
+        self.gen_apply_btn.clicked.connect(self.apply_llm_settings)
+        self.gen_apply_btn.setEnabled(False)
         
         gen_layout.addLayout(top_k_layout)
+        gen_layout.addLayout(tempurature_layout)
         gen_layout.addLayout(max_length_layout)
-        gen_layout.addWidget(apply_gen_btn)
+        gen_layout.addWidget(self.gen_apply_btn)
         gen_layout.addStretch()
         gen_widget.setLayout(gen_layout)
         self.stack.addWidget(gen_widget)
+        
+        
+        # Connect signals for enabling/disabling buttons
+        self.width_input.textChanged.connect(self.check_general_changes)
+        self.height_input.textChanged.connect(self.check_general_changes)
+        self.allow_overflow.stateChanged.connect(self.check_general_changes)
+        self.fade_dialogue.stateChanged.connect(self.check_general_changes)
+        self.llm_prompt.textChanged.connect(self.check_llm_changes)
+        self.top_k.textChanged.connect(self.check_gen_changes)
+        self.tempurature.textChanged.connect(self.check_gen_changes)
+        self.max_length.textChanged.connect(self.check_gen_changes)
 
     def switch_category(self, category):
         index = self.categories.index(category)
@@ -120,6 +172,7 @@ class Settings(QWidget):
             width = int(self.width_input.text())
             height = int(self.height_input.text())
             self.aina.config["allow_overflow"] = self.allow_overflow.isChecked()
+            self.aina.config["fade_dialogue"] = self.fade_dialogue.isChecked()
             self.aina.setFixedSize(width, height)
             if not self.aina.config["allow_overflow"]:
                 self.aina.setMinimumSize(200, 200)  # Enforce minimum size
@@ -132,7 +185,7 @@ class Settings(QWidget):
     def apply_llm_settings(self):
         """Apply LLM settings and save to config"""
         try:
-            self.aina.llm.prompt = self.llm_prompt.text()
+            self.aina.llm.prompt = self.llm_prompt.toPlainText()
             self.aina.llm.top_k = int(self.top_k.text())
             self.aina.llm.max_length = int(self.max_length.text())
             self.aina.save_config()
@@ -162,3 +215,25 @@ class Settings(QWidget):
 
     def mouseReleaseEvent(self, event):
         self.old_pos = None
+    
+    def check_general_changes(self):
+        try:
+            width_changed = int(self.width_input.text()) != self.aina.width()
+            height_changed = int(self.height_input.text()) != self.aina.height()
+            overflow_changed = self.allow_overflow.isChecked() != self.aina.config["allow_overflow"]
+            fade_changed = self.fade_dialogue.isChecked() != self.aina.config["fade_dialogue"]
+            self.general_apply_btn.setEnabled(width_changed or height_changed or overflow_changed or fade_changed)
+        except ValueError:
+            self.general_apply_btn.setEnabled(True)
+
+    def check_llm_changes(self):
+        self.llm_apply_btn.setEnabled(self.llm_prompt.toPlainText() != self.aina.config["llm_prompt"])
+
+    def check_gen_changes(self):
+        try:
+            top_k_changed = int(self.top_k.text()) != self.aina.config["llm_top_k"]
+            tempurature_changed = int(self.tempurature.text()) != self.aina.config["llm_tempurature"]
+            max_length_changed = int(self.max_length.text()) != self.aina.config["llm_max_length"]
+            self.gen_apply_btn.setEnabled(top_k_changed or max_length_changed or tempurature_changed)
+        except ValueError:
+            self.gen_apply_btn.setEnabled(True)
