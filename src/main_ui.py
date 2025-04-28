@@ -125,7 +125,7 @@ class AINA(QWidget):
         
         # Model viewer and buttons
         content_layout = QHBoxLayout()
-        self.video = VideoPlayer("assets/animations/surprise_1.mp4")
+        self.video = VideoPlayer("assets/animations/surprise.mp4")
         self.video.set_crop(130, 75, 50, 50)
         self.video.show()
         content_layout.addWidget(self.video, stretch=2)
