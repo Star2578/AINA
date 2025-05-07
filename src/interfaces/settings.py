@@ -204,16 +204,16 @@ class Settings(QWidget):
         except ValueError:
             print("Invalid generation values")
 
-    def restore_default_model(self):
-        self.aina.viewer.load_model(self.aina.default_model_path)
-        self.aina.viewer.part_visibility.clear()
-        for part_id in range(len(self.aina.viewer.meshes)):
-            self.aina.viewer.part_visibility[part_id] = True
-        self.model_path_label.setText(f"Current: {self.aina.default_model_path}")
-        self.aina.save_config()
-        if self.aina.customizer and self.aina.customizer.isVisible():
-            self.aina.customizer.tree.clear()
-            self.aina.customizer.populate_tree()
+    # def restore_default_model(self):
+    #     self.aina.viewer.load_model(self.aina.default_model_path)
+    #     self.aina.viewer.part_visibility.clear()
+    #     for part_id in range(len(self.aina.viewer.meshes)):
+    #         self.aina.viewer.part_visibility[part_id] = True
+    #     self.model_path_label.setText(f"Current: {self.aina.default_model_path}")
+    #     self.aina.save_config()
+    #     if self.aina.customizer and self.aina.customizer.isVisible():
+    #         self.aina.customizer.tree.clear()
+    #         self.aina.customizer.populate_tree()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
