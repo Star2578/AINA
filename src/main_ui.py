@@ -256,16 +256,16 @@ class AINA(QWidget):
         if self.response_index < len(self.current_response):
             self.chat_bubble.setPlainText(self.current_response[:self.response_index + 1])
             self.response_index += 1
-            # Adjust bubble size to fit content
+
             document_height = self.chat_bubble.document().size().height()
             new_height = min(int(document_height) + 28, 200)
-            self.chat_bubble.setFixedHeight(new_height)  # Still used for animation
+            self.chat_bubble.setFixedHeight(new_height)
         else:
             self.stop_animation()
-            # Ensure scrolling is enabled after animation
-            self.chat_bubble.setFixedHeight(200)  # Cap at max height
-            if self.config.get("fade_dialogue", False):
-                QTimer.singleShot(10000, self.fade_bubble)
+            document_height = self.chat_bubble.document().size().height()
+            new_height = min(int(document_height) + 28, 200)
+
+            self.chat_bubble.setFixedHeight(new_height)
 
     def stop_animation(self):
         """Stop the typing animation"""
@@ -275,16 +275,6 @@ class AINA(QWidget):
             self.animation_timer = None
         self.current_response = ""
         self.response_index = 0
-
-    def fade_bubble(self):
-        """Fade out the chat bubble"""
-        animation = QPropertyAnimation(self.chat_bubble, b"windowOpacity")
-        animation.setDuration(1000)
-        animation.setStartValue(1.0)
-        animation.setEndValue(0.0)
-        animation.finished.connect(lambda: self.chat_bubble.setVisible(False))
-        animation.finished.connect(lambda: self.chat_bubble.setWindowOpacity(1.0))
-        animation.start()
 
     def quit(self):
         QApplication.quit()

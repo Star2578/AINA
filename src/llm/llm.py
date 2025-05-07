@@ -122,7 +122,7 @@ class LLM(QWidget):
         if len(self.conversation_history) > self.max_history_length:
             self.conversation_history = self.conversation_history[-self.max_history_length:]
 
-        prompt_with_history = f"{self.prompt}\n"
+        prompt_with_history = f"{self.prompt}\nHistory:\n"
         for item in self.conversation_history:
             prompt_with_history += f"{item['role'].capitalize()}: {item['content']}\n"
         prompt_with_history += "Assistant:"
