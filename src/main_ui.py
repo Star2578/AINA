@@ -22,6 +22,7 @@ class AINA(QWidget):
         self.chat_history = []
         
         self.progress_updated.emit(20, "Initializing application...")
+        self.settings = None
         self.load_config()
 
         self.setWindowTitle("AINA - Desktop Pet")
@@ -83,7 +84,7 @@ class AINA(QWidget):
         self.chat_bubble.setReadOnly(True)
         self.chat_bubble.setVisible(False)
         self.chat_bubble.setFixedWidth(300)
-        # self.chat_bubble.setMaximumHeight(200)
+        self.chat_bubble.setMaximumHeight(200)
         self.chat_bubble.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         
         chat_input_layout = QHBoxLayout()
@@ -177,6 +178,10 @@ class AINA(QWidget):
     def load_config(self):
         """Load settings from config file, using defaults if not found."""
         self.config = {}
+        if not os.path.exists(self.config_file):
+            self.save_config()
+            print(f"Created new config file with defaults at {self.config_file}")
+            
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, 'r') as f:
@@ -198,24 +203,24 @@ class AINA(QWidget):
         self.config.setdefault("llm_top_k", 40)
         self.config.setdefault("llm_top_p", 0.9)
         self.config.setdefault("llm_temperature", 0.7)
-
-        if not os.path.exists(self.config_file):
-            self.save_config()
-            print(f"Created new config file with defaults at {self.config_file}")
+        self.config.setdefault("ollama_model", "")
+        self.config.setdefault("ollama_base_url", "http://localhost:11434")
 
     def save_config(self):
         """Save settings to config file."""
         self.config["width"] = self.width()
         self.config["height"] = self.height()
-        self.config["allow_overflow"] = self.settings.allow_overflow.isChecked()
+        self.config["allow_overflow"] = self.settings.allow_overflow.isChecked() if self.settings and hasattr(self.settings, 'allow_overflow') else False
         self.config["pos_x"] = self.x()
         self.config["pos_y"] = self.y()
-        self.config["llm_prompt"] = self.settings.llm_prompt.toPlainText() if hasattr(self.settings, 'llm_prompt') else self.config["llm_prompt"]
-        self.config["llm_min_length"] = int(self.settings.min_length.text()) if hasattr(self.settings, 'min_length') else self.config["llm_min_length"]
-        self.config["llm_max_length"] = int(self.settings.max_length.text()) if hasattr(self.settings, 'max_length') else self.config["llm_max_length"]
-        self.config["llm_top_k"] = int(self.settings.top_k.text()) if hasattr(self.settings, 'top_k') else self.config["llm_top_k"]
-        self.config["llm_top_p"] = float(self.settings.top_p.text()) if hasattr(self.settings, 'top_p') else self.config["llm_top_p"]
-        self.config["llm_temperature"] = float(self.settings.temperature.text()) if hasattr(self.settings, 'temperature') else self.config["llm_temperature"]
+        self.config["llm_prompt"] = self.settings.llm_prompt.toPlainText() if self.settings and hasattr(self.settings, 'llm_prompt') else "You are AINA, a helpful desktop pet assistant."
+        self.config["llm_min_length"] = int(self.settings.min_length.text()) if self.settings and hasattr(self.settings, 'min_length') else 30
+        self.config["llm_max_length"] = int(self.settings.max_length.text()) if self.settings and hasattr(self.settings, 'max_length') else 200
+        self.config["llm_top_k"] = int(self.settings.top_k.text()) if self.settings and hasattr(self.settings, 'top_k') else 40
+        self.config["llm_top_p"] = float(self.settings.top_p.text()) if self.settings and hasattr(self.settings, 'top_p') else 0.9
+        self.config["llm_temperature"] = float(self.settings.temperature.text()) if self.settings and hasattr(self.settings, 'temperature') else 0.7
+        self.config["ollama_model"] = self.settings.ollama_model.toPlainText() if self.settings and hasattr(self.settings, 'ollama_model') else ""
+        self.config["ollama_base_url"] = self.settings.ollama_base_url.toPlainText() if self.settings and hasattr(self.settings, 'ollama_base_url') else "http://localhost:11434"
         
         try:
             with open(self.config_file, 'w') as f:
@@ -256,13 +261,16 @@ class AINA(QWidget):
         if self.response_index < len(self.current_response):
             self.chat_bubble.setPlainText(self.current_response[:self.response_index + 1])
             self.response_index += 1
-            # Adjust bubble size to fit content
+
             document_height = self.chat_bubble.document().size().height()
-            self.chat_bubble.setFixedHeight(int(document_height) + 20)
+            new_height = min(int(document_height) + 28, 200)
+            self.chat_bubble.setFixedHeight(new_height)
         else:
             self.stop_animation()
-            if self.config.get("fade_dialogue", False):
-                QTimer.singleShot(10000, self.fade_bubble)
+            document_height = self.chat_bubble.document().size().height()
+            new_height = min(int(document_height) + 28, 200)
+
+            self.chat_bubble.setFixedHeight(new_height)
 
     def stop_animation(self):
         """Stop the typing animation"""
@@ -272,16 +280,6 @@ class AINA(QWidget):
             self.animation_timer = None
         self.current_response = ""
         self.response_index = 0
-
-    def fade_bubble(self):
-        """Fade out the chat bubble"""
-        animation = QPropertyAnimation(self.chat_bubble, b"windowOpacity")
-        animation.setDuration(1000)
-        animation.setStartValue(1.0)
-        animation.setEndValue(0.0)
-        animation.finished.connect(lambda: self.chat_bubble.setVisible(False))
-        animation.finished.connect(lambda: self.chat_bubble.setWindowOpacity(1.0))
-        animation.start()
 
     def quit(self):
         QApplication.quit()
