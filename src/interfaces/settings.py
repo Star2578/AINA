@@ -75,6 +75,28 @@ class Settings(QWidget):
         # - Overhead Prompt : How should AINA respond
 
         llm_widget = QWidget()
+        ollama_model_layout = QVBoxLayout()
+        ollama_model_layout.addWidget(QLabel("Ollama Model Name:"))
+        self.ollama_model = QTextEdit(self.aina.config["ollama_model"])
+        self.ollama_model.setStyleSheet("""
+            background-color: #e0e0e0;
+            color: black;
+            border: 1px solid #808080;
+            border-radius: 5px;
+        """)
+        self.ollama_model.setFixedHeight(30)
+        
+        ollama_base_url_layout = QVBoxLayout()
+        ollama_base_url_layout.addWidget(QLabel("Ollama URL:"))
+        self.ollama_base_url = QTextEdit(self.aina.config["ollama_base_url"])
+        self.ollama_base_url.setStyleSheet("""
+            background-color: #e0e0e0;
+            color: black;
+            border: 1px solid #808080;
+            border-radius: 5px;
+        """)
+        self.ollama_base_url.setFixedHeight(30)
+        
         llm_layout = QVBoxLayout()
         llm_layout.addWidget(QLabel("Overhead Prompt:"))
         self.llm_prompt = QTextEdit(self.aina.config["llm_prompt"])
@@ -96,6 +118,8 @@ class Settings(QWidget):
         self.llm_apply_btn.clicked.connect(self.apply_llm_settings)
         self.llm_apply_btn.setEnabled(False)
         
+        llm_layout.addWidget(self.ollama_model)
+        llm_layout.addWidget(self.ollama_base_url)
         llm_layout.addWidget(self.llm_prompt)
         llm_layout.addWidget(self.llm_apply_btn)
         llm_layout.addStretch()
@@ -116,31 +140,31 @@ class Settings(QWidget):
         top_k_layout = QHBoxLayout()
         top_k_layout.addWidget(QLabel("Top K:"))
         self.top_k = QLineEdit(str(self.aina.config["llm_top_k"]))
-        self.top_k.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
+        self.top_k.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px;")
         top_k_layout.addWidget(self.top_k)
         
         top_p_layout = QHBoxLayout()
         top_p_layout.addWidget(QLabel("Top P:"))
         self.top_p = QLineEdit(str(self.aina.config["llm_top_p"]))
-        self.top_p.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
+        self.top_p.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px;")
         top_p_layout.addWidget(self.top_p)
         
         temperature_layout = QHBoxLayout()
         temperature_layout.addWidget(QLabel("Temperature:"))
         self.temperature = QLineEdit(str(self.aina.config["llm_temperature"]))
-        self.temperature.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
+        self.temperature.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px;")
         temperature_layout.addWidget(self.temperature)
         
         min_length_layout = QHBoxLayout()
         min_length_layout.addWidget(QLabel("Min Length:"))
         self.min_length = QLineEdit(str(self.aina.config["llm_min_length"]))
-        self.min_length.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
+        self.min_length.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px;")
         min_length_layout.addWidget(self.min_length)
         
         max_length_layout = QHBoxLayout()
         max_length_layout.addWidget(QLabel("Max Length:"))
         self.max_length = QLineEdit(str(self.aina.config["llm_max_length"]))
-        self.max_length.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
+        self.max_length.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px;")
         max_length_layout.addWidget(self.max_length)
         
         self.gen_apply_btn = QPushButton("Apply")
