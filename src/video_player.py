@@ -11,36 +11,33 @@ class VideoPlayer(QWidget):
         self.video_path = video_path
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         
-        # Default crop settings
         self.crop_enabled = False
         self.crop_rect = QRectF(0, 0, 0, 0)
-        self.pending_crop = None  # Store crop settings to apply after video loads
+        self.pending_crop = None
         
         self.init_ui()
         self.setup_player()
         
-        # Use a timer to check when video is available
         self.check_video_timer = QTimer(self)
-        self.check_video_timer.setInterval(100)  # Check every 100ms
+        self.check_video_timer.setInterval(100)
         self.check_video_timer.timeout.connect(self.check_video_size)
         self.check_video_timer.start()
         self.video_initialized = False
+        self.loop_point_reached = False
 
     def init_ui(self):
         """Initialize the video player UI"""
         self.layout = QVBoxLayout()
         self.layout.setContentsMargins(0, 0, 0, 0)
 
-        # Create scene and view
         self.scene = QGraphicsScene(self)
         self.view = QGraphicsView(self.scene, self)
-        self.view.setFrameShape(QGraphicsView.Shape.NoFrame)  # No border
-        self.view.setStyleSheet("background: transparent;")   # Make background transparent
+        self.view.setFrameShape(QGraphicsView.Shape.NoFrame)
+        self.view.setStyleSheet("background: transparent;")
         self.view.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
-        # Create video item
         self.video_item = QGraphicsVideoItem()
         self.scene.addItem(self.video_item)
 
@@ -56,7 +53,7 @@ class VideoPlayer(QWidget):
         self.set_video(self.video_path)
 
         # Enable looping
-        self.player.mediaStatusChanged.connect(self.handle_media_status)
+        self.player.positionChanged.connect(self.check_loop_point)
 
         # Start playback
         self.player.play()
@@ -66,16 +63,23 @@ class VideoPlayer(QWidget):
         if os.path.exists(video_path):
             self.video_path = video_path
             self.player.setSource(QUrl.fromLocalFile(video_path))
-            self.video_initialized = False  # Reset initialization flag
+            
+            # Reset Flags
+            self.video_initialized = False
+            self.loop_point_reached = False
             self.player.play()
         else:
             print(f"Video file not found: {video_path}")
 
-    def handle_media_status(self, status):
-        """Handle media status changes to enable looping"""
-        if status == QMediaPlayer.MediaStatus.EndOfMedia:
-            self.player.setPosition(0)
-            self.player.play()
+    def check_loop_point(self, position):
+        """Check if we are near the end of the video and prepare to loop"""
+        duration = self.player.duration()
+        if duration > 0 and position > duration - 100: # Check if within 100 ms of the end
+            if not self.loop_point_reached:
+                self.player.setPosition(0)
+                self.loop_point_reached = True
+        elif self.loop_point_reached and position > 10: # Reset flag if playback has restarted
+            self.loop_point_reached = False
 
     def check_video_size(self):
         """Check if video has loaded and has a valid size"""
@@ -88,7 +92,6 @@ class VideoPlayer(QWidget):
             
     def on_video_available(self):
         """Called when the video becomes available"""
-        # Get the video's natural size
         video_size = self.video_item.size()
         print(f"Video loaded with size: {video_size.width()}x{video_size.height()}")
         
