@@ -74,6 +74,7 @@ def main():
     loading.update_progress(100, "Launching AINA...")  # Ensure 100% is reached
     window.show()
     loading.close()
+    sys.stdout = loading.stdout
     
     sys.exit(app.exec())
 

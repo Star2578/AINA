@@ -49,13 +49,10 @@ class Settings(QWidget):
         self.height_input = QLineEdit(str(self.aina.height()))
         self.allow_overflow = QCheckBox("Allow Overflow")
         self.allow_overflow.setChecked(self.aina.config["allow_overflow"])
-        self.fade_dialogue = QCheckBox("Fade Dialogue Bubble")
-        self.fade_dialogue.setChecked(self.aina.config["fade_dialogue"])
         
         general_layout.addWidget(self.width_input)
         general_layout.addWidget(self.height_input)
         general_layout.addWidget(self.allow_overflow)
-        general_layout.addWidget(self.fade_dialogue)
         
         self.general_apply_btn = QPushButton("Apply")
         self.general_apply_btn.setStyleSheet("""
@@ -108,7 +105,8 @@ class Settings(QWidget):
         # Generation (placeholder)
         # TODO : Implement
         # - Top K : Creativity
-        # - Tempurature : Randomness
+        # - Top P : Nucleus Sampling
+        # - Temperature : Randomness
         # - Max Length : Respond length
         
         gen_widget = QWidget()
@@ -116,16 +114,28 @@ class Settings(QWidget):
         gen_layout.addWidget(QLabel("Generation Settings:"))
         
         top_k_layout = QHBoxLayout()
-        top_k_layout.addWidget(QLabel("Top K (Creativity):"))
+        top_k_layout.addWidget(QLabel("Top K:"))
         self.top_k = QLineEdit(str(self.aina.config["llm_top_k"]))
         self.top_k.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
         top_k_layout.addWidget(self.top_k)
         
-        tempurature_layout = QHBoxLayout()
-        tempurature_layout.addWidget(QLabel("Tempurature (Randomness):"))
-        self.tempurature = QLineEdit(str(self.aina.config["llm_tempurature"]))
-        self.tempurature.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
-        tempurature_layout.addWidget(self.tempurature)
+        top_p_layout = QHBoxLayout()
+        top_p_layout.addWidget(QLabel("Top P:"))
+        self.top_p = QLineEdit(str(self.aina.config["llm_top_p"]))
+        self.top_p.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
+        top_p_layout.addWidget(self.top_p)
+        
+        temperature_layout = QHBoxLayout()
+        temperature_layout.addWidget(QLabel("Temperature:"))
+        self.temperature = QLineEdit(str(self.aina.config["llm_temperature"]))
+        self.temperature.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
+        temperature_layout.addWidget(self.temperature)
+        
+        min_length_layout = QHBoxLayout()
+        min_length_layout.addWidget(QLabel("Min Length:"))
+        self.min_length = QLineEdit(str(self.aina.config["llm_min_length"]))
+        self.min_length.setStyleSheet("background-color: #e0e0e0; border: 1px solid #808080; border-radius: 5px; padding: 5px;")
+        min_length_layout.addWidget(self.min_length)
         
         max_length_layout = QHBoxLayout()
         max_length_layout.addWidget(QLabel("Max Length:"))
@@ -143,7 +153,9 @@ class Settings(QWidget):
         self.gen_apply_btn.setEnabled(False)
         
         gen_layout.addLayout(top_k_layout)
-        gen_layout.addLayout(tempurature_layout)
+        gen_layout.addLayout(top_p_layout)
+        gen_layout.addLayout(temperature_layout)
+        gen_layout.addLayout(min_length_layout)
         gen_layout.addLayout(max_length_layout)
         gen_layout.addWidget(self.gen_apply_btn)
         gen_layout.addStretch()
@@ -155,10 +167,11 @@ class Settings(QWidget):
         self.width_input.textChanged.connect(self.check_general_changes)
         self.height_input.textChanged.connect(self.check_general_changes)
         self.allow_overflow.stateChanged.connect(self.check_general_changes)
-        self.fade_dialogue.stateChanged.connect(self.check_general_changes)
         self.llm_prompt.textChanged.connect(self.check_llm_changes)
+        self.top_p.textChanged.connect(self.check_gen_changes)
         self.top_k.textChanged.connect(self.check_gen_changes)
-        self.tempurature.textChanged.connect(self.check_gen_changes)
+        self.temperature.textChanged.connect(self.check_gen_changes)
+        self.min_length.textChanged.connect(self.check_gen_changes)
         self.max_length.textChanged.connect(self.check_gen_changes)
 
     def switch_category(self, category):
@@ -172,7 +185,6 @@ class Settings(QWidget):
             width = int(self.width_input.text())
             height = int(self.height_input.text())
             self.aina.config["allow_overflow"] = self.allow_overflow.isChecked()
-            self.aina.config["fade_dialogue"] = self.fade_dialogue.isChecked()
             self.aina.setFixedSize(width, height)
             if not self.aina.config["allow_overflow"]:
                 self.aina.setMinimumSize(200, 200)  # Enforce minimum size
@@ -192,16 +204,16 @@ class Settings(QWidget):
         except ValueError:
             print("Invalid generation values")
 
-    def restore_default_model(self):
-        self.aina.viewer.load_model(self.aina.default_model_path)
-        self.aina.viewer.part_visibility.clear()
-        for part_id in range(len(self.aina.viewer.meshes)):
-            self.aina.viewer.part_visibility[part_id] = True
-        self.model_path_label.setText(f"Current: {self.aina.default_model_path}")
-        self.aina.save_config()
-        if self.aina.customizer and self.aina.customizer.isVisible():
-            self.aina.customizer.tree.clear()
-            self.aina.customizer.populate_tree()
+    # def restore_default_model(self):
+    #     self.aina.viewer.load_model(self.aina.default_model_path)
+    #     self.aina.viewer.part_visibility.clear()
+    #     for part_id in range(len(self.aina.viewer.meshes)):
+    #         self.aina.viewer.part_visibility[part_id] = True
+    #     self.model_path_label.setText(f"Current: {self.aina.default_model_path}")
+    #     self.aina.save_config()
+    #     if self.aina.customizer and self.aina.customizer.isVisible():
+    #         self.aina.customizer.tree.clear()
+    #         self.aina.customizer.populate_tree()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -221,8 +233,7 @@ class Settings(QWidget):
             width_changed = int(self.width_input.text()) != self.aina.width()
             height_changed = int(self.height_input.text()) != self.aina.height()
             overflow_changed = self.allow_overflow.isChecked() != self.aina.config["allow_overflow"]
-            fade_changed = self.fade_dialogue.isChecked() != self.aina.config["fade_dialogue"]
-            self.general_apply_btn.setEnabled(width_changed or height_changed or overflow_changed or fade_changed)
+            self.general_apply_btn.setEnabled(width_changed or height_changed or overflow_changed)
         except ValueError:
             self.general_apply_btn.setEnabled(True)
 
@@ -232,8 +243,10 @@ class Settings(QWidget):
     def check_gen_changes(self):
         try:
             top_k_changed = int(self.top_k.text()) != self.aina.config["llm_top_k"]
-            tempurature_changed = int(self.tempurature.text()) != self.aina.config["llm_tempurature"]
+            top_p_changed = float(self.top_p.text()) != self.aina.config["llm_top_p"]
+            temperature_changed = float(self.temperature.text()) != self.aina.config["llm_temperature"]
+            min_length_changed = int(self.min_length.text()) != self.aina.config["llm_min_length"]
             max_length_changed = int(self.max_length.text()) != self.aina.config["llm_max_length"]
-            self.gen_apply_btn.setEnabled(top_k_changed or max_length_changed or tempurature_changed)
+            self.gen_apply_btn.setEnabled(top_k_changed or top_p_changed or min_length_changed or max_length_changed or temperature_changed)
         except ValueError:
             self.gen_apply_btn.setEnabled(True)

@@ -1,8 +1,9 @@
-from PyQt6.QtWidgets import QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QApplication, QToolButton, QLineEdit, QDialog, QTextBrowser, QTextEdit
+from PyQt6.QtWidgets import QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QApplication, QToolButton, QSizePolicy, QDialog, QTextBrowser, QTextEdit
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QPropertyAnimation
 from PyQt6.QtGui import QIcon, QCursor
 from src.llm.llm import LLM
 from src.model_viewer import ModelViewer
+from src.video_player import VideoPlayer
 from src.interfaces.customizer import Customizer
 from src.interfaces.settings import Settings
 from utils.pos import place_at, vw, vh
@@ -16,8 +17,7 @@ class AINA(QWidget):
     def __init__(self):
         super().__init__()
         self.config_file = "config.json"
-        self.default_model_path = "assets/models/king_triton/scene.gltf"
-        self.viewer = None
+        self.video = None
         self.drag_area_size = 30
         self.chat_history = []
         
@@ -37,7 +37,6 @@ class AINA(QWidget):
         self.move(self.config.get("pos_x", vw(70)), self.config.get("pos_y", vh(70)))
         
         self.progress_updated.emit(90, "Initializing customizer and settings...")
-        self.customizer = Customizer(self.viewer)
         self.settings = Settings(self)
         self.old_pos = None
         self.is_dragging = False
@@ -83,6 +82,9 @@ class AINA(QWidget):
         self.chat_bubble.setOpenExternalLinks(False)
         self.chat_bubble.setReadOnly(True)
         self.chat_bubble.setVisible(False)
+        self.chat_bubble.setFixedWidth(300)
+        # self.chat_bubble.setMaximumHeight(200)
+        self.chat_bubble.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         
         chat_input_layout = QHBoxLayout()
         self.chat_input = QTextEdit()
@@ -123,14 +125,10 @@ class AINA(QWidget):
         
         # Model viewer and buttons
         content_layout = QHBoxLayout()
-        self.viewer = ModelViewer(self.config.get("model_path", self.default_model_path), 
-                                self.config.get("part_visibility", {}))
-        self.progress_updated.emit(70, "Model viewer initialized.")
-        
-        if "part_visibility" in self.config:
-            self.viewer.part_visibility.update(self.config["part_visibility"])
-    
-        content_layout.addWidget(self.viewer, stretch=2)
+        self.video = VideoPlayer("assets/animations/idle.mp4")
+        self.video.set_crop(130, 75, 50, 50)
+        self.video.show()
+        content_layout.addWidget(self.video, stretch=2)
         
         # Buttons (Right)
         button_layout = QVBoxLayout()
@@ -140,12 +138,6 @@ class AINA(QWidget):
         self.exit_button.setIcon(QIcon("assets/icons/exit.png"))
         self.exit_button.setToolTip("Exit AINA")
         self.exit_button.clicked.connect(self.quit)
-
-        # Customize Button
-        self.customize_button = QToolButton()
-        self.customize_button.setIcon(QIcon("assets/icons/custom.png"))
-        self.customize_button.setToolTip("Customize Model")
-        self.customize_button.clicked.connect(self.open_customizer)
         
         # Setting Button
         self.setting_button = QToolButton()
@@ -168,7 +160,6 @@ class AINA(QWidget):
         # Add buttons to layout
         button_layout.addWidget(self.new_chat_button)
         button_layout.addWidget(self.chatlogs_button)
-        button_layout.addWidget(self.customize_button)
         button_layout.addWidget(self.setting_button)
         button_layout.addWidget(self.exit_button)
         button_layout.addStretch()
@@ -198,16 +189,15 @@ class AINA(QWidget):
 
         self.config.setdefault("width", vw(20))
         self.config.setdefault("height", vh(20))
-        self.config.setdefault("model_path", self.default_model_path)
-        self.config.setdefault("part_visibility", {})
         self.config.setdefault("allow_overflow", False)
-        self.config.setdefault("fade_dialogue", False)
         self.config.setdefault("pos_x", vw(70))
         self.config.setdefault("pos_y", vh(70))
         self.config.setdefault("llm_prompt", "You are AINA, a helpful desktop pet assistant.")
-        self.config.setdefault("llm_max_length", 100)
+        self.config.setdefault("llm_min_length", 30)
+        self.config.setdefault("llm_max_length", 200)
         self.config.setdefault("llm_top_k", 40)
-        self.config.setdefault("llm_tempurature", 0.7)
+        self.config.setdefault("llm_top_p", 0.9)
+        self.config.setdefault("llm_temperature", 0.7)
 
         if not os.path.exists(self.config_file):
             self.save_config()
@@ -217,16 +207,15 @@ class AINA(QWidget):
         """Save settings to config file."""
         self.config["width"] = self.width()
         self.config["height"] = self.height()
-        self.config["model_path"] = self.viewer.model_path if self.viewer else self.default_model_path
-        self.config["part_visibility"] = self.viewer.part_visibility if self.viewer else {}
         self.config["allow_overflow"] = self.settings.allow_overflow.isChecked()
-        self.config["fade_dialogue"] = self.settings.fade_dialogue.isChecked()
         self.config["pos_x"] = self.x()
         self.config["pos_y"] = self.y()
         self.config["llm_prompt"] = self.settings.llm_prompt.toPlainText() if hasattr(self.settings, 'llm_prompt') else self.config["llm_prompt"]
+        self.config["llm_min_length"] = int(self.settings.min_length.text()) if hasattr(self.settings, 'min_length') else self.config["llm_min_length"]
         self.config["llm_max_length"] = int(self.settings.max_length.text()) if hasattr(self.settings, 'max_length') else self.config["llm_max_length"]
         self.config["llm_top_k"] = int(self.settings.top_k.text()) if hasattr(self.settings, 'top_k') else self.config["llm_top_k"]
-        self.config["llm_tempurature"] = float(self.settings.tempurature.text()) if hasattr(self.settings, 'tempurature') else self.config["llm_tempurature"]
+        self.config["llm_top_p"] = float(self.settings.top_p.text()) if hasattr(self.settings, 'top_p') else self.config["llm_top_p"]
+        self.config["llm_temperature"] = float(self.settings.temperature.text()) if hasattr(self.settings, 'temperature') else self.config["llm_temperature"]
         
         try:
             with open(self.config_file, 'w') as f:
@@ -235,26 +224,64 @@ class AINA(QWidget):
             print(f"Error saving config: {e}")
 
     def send_message(self):
-        """Send message from input to LLM and display response"""
+        """Send message from input to LLM"""
         message = self.chat_input.toPlainText().strip()
         if message:
             self.chat_input.setEnabled(False)
             self.send_button.setEnabled(False)
             self.send_button.setIcon(QIcon("assets/icons/loading.png"))
-            
-            QTimer.singleShot(0, lambda: self.process_message(message))
+            self.chat_input.clear()
+            self.llm.process_message(message)
 
-    def process_message(self, message):
-        """Process the message and update UI"""
-        response = self.llm.process_message(message)
-        self.chat_history.append(f"User: {message}\nAINA: {response}")
-        self.chat_bubble.setPlainText(response)
+    def process_message_response(self, response):
+        """Handle LLM response from worker thread"""
+        self.chat_history.append(f"User: {self.chat_input.toPlainText().strip()}\nAINA: {response}")
+        self.current_response = response
+        self.response_index = 0
+        self.chat_bubble.setPlainText("")
         self.chat_bubble.setVisible(True)
-        self.chat_input.clear()
+        
+        # Start typing animation
+        self.animation_timer = QTimer(self)
+        self.animation_timer.timeout.connect(self.animate_text)
+        self.animation_timer.start(self.config.get("typing_speed", 50))  # ms per character
         
         self.chat_input.setEnabled(True)
         self.send_button.setEnabled(True)
+        self.new_chat_button.setEnabled(True)
         self.send_button.setIcon(QIcon("assets/icons/send.png"))
+
+    def animate_text(self):
+        """Display text letter by letter"""
+        if self.response_index < len(self.current_response):
+            self.chat_bubble.setPlainText(self.current_response[:self.response_index + 1])
+            self.response_index += 1
+            # Adjust bubble size to fit content
+            document_height = self.chat_bubble.document().size().height()
+            self.chat_bubble.setFixedHeight(int(document_height) + 20)
+        else:
+            self.stop_animation()
+            if self.config.get("fade_dialogue", False):
+                QTimer.singleShot(10000, self.fade_bubble)
+
+    def stop_animation(self):
+        """Stop the typing animation"""
+        if self.animation_timer:
+            self.animation_timer.stop()
+            self.animation_timer.deleteLater()
+            self.animation_timer = None
+        self.current_response = ""
+        self.response_index = 0
+
+    def fade_bubble(self):
+        """Fade out the chat bubble"""
+        animation = QPropertyAnimation(self.chat_bubble, b"windowOpacity")
+        animation.setDuration(1000)
+        animation.setStartValue(1.0)
+        animation.setEndValue(0.0)
+        animation.finished.connect(lambda: self.chat_bubble.setVisible(False))
+        animation.finished.connect(lambda: self.chat_bubble.setWindowOpacity(1.0))
+        animation.start()
 
     def quit(self):
         QApplication.quit()
@@ -309,22 +336,20 @@ class AINA(QWidget):
         chatlog_dialog.exec()
         
     def open_newchat(self):
-        """Call function from LLM class"""
+        """Clear current chat and stop any ongoing LLM processing"""
+        if hasattr(self.llm, 'thread') and self.llm.thread and self.llm.thread.isRunning():
+            self.llm.thread.quit()
+            self.llm.thread.wait()  # Ensure thread terminates
         self.llm.new_chat()
         self.chat_history.clear()
-        
-    def open_customizer(self):
-        """Open the model customization interface."""
-        if self.customizer is None or not self.customizer.isVisible():
-            self.customizer = Customizer(self.viewer)
-            self.customizer.show()
-        else:
-            self.customizer.raise_()
+        self.chat_input.setEnabled(True)
+        self.send_button.setEnabled(True)
+        self.send_button.setIcon(QIcon("assets/icons/send.png"))
 
     def start_drag(self):
         """Initiate dragging when the drag_area button is pressed."""
         self.is_dragging = True
-        self.old_pos = QApplication.instance().overrideCursor() or QCursor.pos()  # Use global cursor pos
+        self.old_pos = QApplication.instance().overrideCursor() or QCursor.pos()
 
     def mouseMoveEvent(self, event):
         """Handle dragging when initiated by the drag_area button."""
