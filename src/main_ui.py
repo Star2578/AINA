@@ -83,7 +83,7 @@ class AINA(QWidget):
         self.chat_bubble.setReadOnly(True)
         self.chat_bubble.setVisible(False)
         self.chat_bubble.setFixedWidth(300)
-        # self.chat_bubble.setMaximumHeight(200)
+        self.chat_bubble.setMaximumHeight(200)
         self.chat_bubble.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         
         chat_input_layout = QHBoxLayout()
@@ -258,9 +258,12 @@ class AINA(QWidget):
             self.response_index += 1
             # Adjust bubble size to fit content
             document_height = self.chat_bubble.document().size().height()
-            self.chat_bubble.setFixedHeight(int(document_height) + 20)
+            new_height = min(int(document_height) + 28, 200)
+            self.chat_bubble.setFixedHeight(new_height)  # Still used for animation
         else:
             self.stop_animation()
+            # Ensure scrolling is enabled after animation
+            self.chat_bubble.setFixedHeight(200)  # Cap at max height
             if self.config.get("fade_dialogue", False):
                 QTimer.singleShot(10000, self.fade_bubble)
 
