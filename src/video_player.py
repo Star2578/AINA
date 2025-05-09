@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QGraphicsView, QGraphicsScene
-from PyQt6.QtGui import QPainter
+from PyQt6.QtGui import QPainter, QTransform
 from PyQt6.QtMultimedia import QMediaPlayer
 from PyQt6.QtMultimediaWidgets import QGraphicsVideoItem
 from PyQt6.QtCore import QUrl, Qt, QRectF, QPointF, QTimer
@@ -10,10 +10,6 @@ class VideoPlayer(QWidget):
         super().__init__()
         self.video_path = video_path
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
-        
-        self.crop_enabled = False
-        self.crop_rect = QRectF(0, 0, 0, 0)
-        self.pending_crop = None
         
         self.init_ui()
         self.setup_player()
@@ -40,7 +36,6 @@ class VideoPlayer(QWidget):
 
         self.video_item = QGraphicsVideoItem()
         self.scene.addItem(self.video_item)
-
         self.layout.addWidget(self.view)
         self.setLayout(self.layout)
 
@@ -63,13 +58,14 @@ class VideoPlayer(QWidget):
         if os.path.exists(video_path):
             self.video_path = video_path
             self.player.setSource(QUrl.fromLocalFile(video_path))
-            
-            # Reset Flags
+
             self.video_initialized = False
             self.loop_point_reached = False
+
             self.player.play()
         else:
             print(f"Video file not found: {video_path}")
+
 
     def check_loop_point(self, position):
         """Check if we are near the end of the video and prepare to loop"""
@@ -94,73 +90,25 @@ class VideoPlayer(QWidget):
         """Called when the video becomes available"""
         video_size = self.video_item.size()
         print(f"Video loaded with size: {video_size.width()}x{video_size.height()}")
-        
-        # Initialize the crop rectangle to the full video size
-        self.crop_rect = QRectF(0, 0, video_size.width(), video_size.height())
-        
-        # Update the view to show the whole video initially
-        self.view.setSceneRect(0, 0, video_size.width(), video_size.height())
-        self.resize(int(video_size.width()), int(video_size.height()))
-        
-        # Apply pending crop if available
-        if self.pending_crop:
-            x, y, width, height = self.pending_crop
-            self.set_crop(x, y, width, height)
-            self.enable_crop(True)
-            self.pending_crop = None
-        elif self.crop_enabled:
-            self.apply_crop()
 
-    def enable_crop(self, enabled=True):
-        """Enable or disable cropping"""
-        self.crop_enabled = enabled
-        
-        if not self.video_initialized:
-            return
-            
-        if enabled:
-            self.apply_crop()
-        else:
-            # Reset to show the whole video
-            video_size = self.video_item.size()
-            self.view.setSceneRect(0, 0, video_size.width(), video_size.height())
-            self.resize(int(video_size.width()), int(video_size.height()))
+        self.resize(200, 200)  # or whatever fixed size you want
+        self.apply_center_clip()
 
-    def set_crop(self, x, y, width, height):
-        """Set the crop rectangle"""
-        if not self.video_initialized:
-            # Store crop settings to apply after video loads
-            self.pending_crop = (x, y, width, height)
-            return
-            
-        video_size = self.video_item.size()
-        print(f"Setting crop: x={x}, y={y}, w={width}, h={height} on video {video_size.width()}x{video_size.height()}")
-        
-        # Make sure crop values are within video bounds
-        x = max(0, min(x, video_size.width()))
-        y = max(0, min(y, video_size.height()))
-        width = max(10, min(width, video_size.width() - x))  # Minimum crop width of 10
-        height = max(10, min(height, video_size.height() - y))  # Minimum crop height of 10
-        
-        self.crop_rect = QRectF(x, y, width, height)
-        
-        if self.crop_enabled:
-            self.apply_crop()
-        else:
-            self.enable_crop(True)
     
-    def apply_crop(self):
-        """Apply the current crop settings"""
-        if not self.crop_enabled or self.crop_rect.isEmpty():
+    def apply_center_clip(self):
+        """Center the video in the view while showing only part of it"""
+        view_width = self.width()
+        view_height = self.height()
+
+        video_size = self.video_item.size()
+        if video_size.width() == 0 or video_size.height() == 0:
             return
-            
-        print(f"Applying crop: {self.crop_rect.x()},{self.crop_rect.y()},{self.crop_rect.width()}x{self.crop_rect.height()}")
-        
-        # Set the view to show only the cropped area
-        self.view.setSceneRect(self.crop_rect)
-        
-        # Resize the window to match the crop size
-        self.resize(int(self.crop_rect.width()), int(self.crop_rect.height()))
-        
-        # Center the cropped area in the view
-        self.view.centerOn(self.crop_rect.center())
+
+        # Calculate the offset to center the video in the view
+        offset_x = (video_size.width() - view_width) / 2
+        offset_y = (video_size.height() - view_height) / 2
+
+        scene_rect = QRectF(offset_x, offset_y, view_width, view_height)
+        self.view.setSceneRect(scene_rect)
+        self.view.centerOn(QPointF(video_size.width() / 2, video_size.height() / 2))
+

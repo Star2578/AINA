@@ -2,23 +2,38 @@ import json
 import subprocess
 import requests
 import time
+from transformers import pipeline
 import os
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import QThread, pyqtSignal, QObject
 
 OLLAMA_EXECUTABLE = "ollama"  # Adjust path if needed
 
-def is_ollama_running(base_url="http://localhost:11434"):
-    """Checks if the Ollama API is reachable."""
+def is_model_loaded(model_name, base_url="http://localhost:11434"):
+    """Check if the specific model is available in Ollama."""
     try:
-        response = requests.get(f"{base_url}/api/version")
+        response = requests.get(f"{base_url}/api/tags", timeout=2)
         response.raise_for_status()
-        return True
-    except requests.exceptions.RequestException:
+        models = response.json().get("models", [])
+        return any(m["name"] == model_name for m in models)
+    except Exception as e:
+        print(f"Model check failed: {e}")
+        return False
+
+def is_ollama_running(base_url="http://localhost:11434"):
+    """Checks if the Ollama API is reachable and responds with expected data."""
+    try:
+        response = requests.get(f"{base_url}/api/version", timeout=1)
+        response.raise_for_status()
+        # Check if it's Ollama by validating known version key
+        data = response.json()
+        print(f"Ollama running, version: {data.get('version')}")
+        return "version" in data
+    except Exception as e:
+        print(f"Ollama not running check failed: {e}")
         return False
 
 def start_ollama():
-    """Starts the Ollama server as a subprocess."""
     try:
         process = subprocess.Popen([OLLAMA_EXECUTABLE, "serve"])
         print("Ollama server started in the background.")
@@ -27,8 +42,9 @@ def start_ollama():
         print(f"Error: Ollama executable not found at '{OLLAMA_EXECUTABLE}'. Make sure it's in your PATH or adjust OLLAMA_EXECUTABLE.")
         return None
     except Exception as e:
-        print(f"Error starting Ollama: {e}")
+        print(f"Error running Ollama with subprocess.run: {e}")
         return None
+
 
 def stop_ollama(process):
     """Terminates the Ollama subprocess."""
@@ -55,17 +71,38 @@ class Worker(QObject):
         except Exception as e:
             self.error.emit(str(e))
 
+class EmotionWorker(QObject):
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
+
+    def __init__(self, classifier, text):
+        super().__init__()
+        self.classifier = classifier
+        self.text = text
+
+    def run(self):
+        try:
+            result = self.classifier(self.text)
+            emotion = result[0][0]["label"]  # Top label
+            self.finished.emit(emotion)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class LLM(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent = parent
-        self.model_name = self.parent.config.get("ollama_model", "codellama:7b")
+        self.model_name = self.parent.config.get("ollama_model", "pacozaa/openthaigpt:latest")
         self.ollama_base_url = self.parent.config.get("ollama_base_url", "http://localhost:11434")
         self.prompt = self.parent.config["llm_prompt"]
         self.max_length = self.parent.config["llm_max_length"]
         self.temperature = self.parent.config.get("llm_temperature", 0.7)
         self.top_p = self.parent.config.get("llm_top_p", 0.95)
         self.top_k = self.parent.config.get("llm_top_k", 50)
+        
+        self.initialize_ollama()
+        self.emotion_classifier = pipeline("text-classification", model="KittiphopKhankaew/Aina-emotion-classification-WangChanBERTa", top_k=1)
 
         self.conversation_history = []
         self.max_history_length = 10
@@ -73,22 +110,23 @@ class LLM(QWidget):
         self.worker = None
         self.ollama_process = None
 
-        self.initialize_ollama()
-
     def initialize_ollama(self):
-        """Checks if Ollama is running and starts it if not."""
+        """Ensures Ollama is running and the target model is loaded."""
         if not is_ollama_running(self.ollama_base_url):
             print("Ollama not running. Attempting to start...")
             self.ollama_process = start_ollama()
-            if self.ollama_process:
-                # Wait a few seconds for Ollama to start
-                time.sleep(5)
-                if not is_ollama_running(self.ollama_base_url):
-                    print("Error: Failed to start Ollama.")
-                    # Optionally disable LLM functionality or show an error to the user
-            else:
-                print("Ollama could not be started.")
-                # Optionally disable LLM functionality
+            time.sleep(5)
+
+        if not is_ollama_running(self.ollama_base_url):
+            print("Error: Failed to start Ollama.")
+            return
+
+        print("Ollama is running.")
+
+        if not is_model_loaded(self.model_name, self.ollama_base_url):
+            print(f"Model '{self.model_name}' not found on server.")
+            print("You may need to pull it manually or check your model name.")
+
 
     def closeEvent(self, event):
         """Handles the application's closing event."""
@@ -124,7 +162,7 @@ class LLM(QWidget):
 
         prompt_with_history = f"{self.prompt}\nHistory:\n"
         for item in self.conversation_history:
-            prompt_with_history += f"{item['role'].capitalize()}: {item['content']}\n"
+            prompt_with_history += f"{item['role'].capitalize()} said: {item['content']}\n"
         prompt_with_history += "Assistant:"
 
         data = {
@@ -157,6 +195,21 @@ class LLM(QWidget):
 
     def on_processing_finished(self, response):
         self.parent.process_message_response(response)
+        
+        self.emotion_thread = QThread()
+        self.emotion_worker = EmotionWorker(self.emotion_classifier, response)
+        self.emotion_worker.moveToThread(self.emotion_thread)
+    
+        self.emotion_thread.started.connect(self.emotion_worker.run)
+        self.emotion_worker.finished.connect(self.on_emotion_finished)
+        self.emotion_worker.error.connect(self.on_emotion_error)
+        self.emotion_worker.finished.connect(self.emotion_thread.quit)
+        self.emotion_worker.error.connect(self.emotion_thread.quit)
+        self.emotion_worker.finished.connect(self.emotion_worker.deleteLater)
+        self.emotion_worker.error.connect(self.emotion_worker.deleteLater)
+        self.emotion_thread.finished.connect(self.emotion_thread.deleteLater)
+    
+        self.emotion_thread.start()
 
     def on_processing_error(self, error):
         print(f"LLM processing error: {error}")
@@ -165,6 +218,21 @@ class LLM(QWidget):
     def on_thread_finished(self):
         self.thread = None
         self.worker = None
+
+    def on_emotion_finished(self, emotion_label):
+        print(f"Emotion classified: {emotion_label}")
+        emotions = [
+            "assets/animations/idle.mp4",
+            "assets/animations/smirk.mp4",
+            "assets/animations/surprise.mp4",
+            "assets/animations/sad.mp4",
+            "assets/animations/disgust.mp4",
+            "assets/animations/angry.mp4",
+        ]
+        self.parent.video.set_video(emotions[int(emotion_label[-1:])])
+
+    def on_emotion_error(self, error):
+        print(f"Emotion classification error: {error}")
 
     def new_chat(self):
         self.conversation_history = []

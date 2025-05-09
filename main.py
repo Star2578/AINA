@@ -3,7 +3,6 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QPixmap
 from src.main_ui import AINA
 import sys
-import io
 
 class LoadingWindow(QWidget):
     def __init__(self):
@@ -35,19 +34,9 @@ class LoadingWindow(QWidget):
         
         self.setLayout(layout)
         
-        self.stdout = sys.stdout
-        sys.stdout = self
-        
     def write(self, text):
         self.log_display.append(text.strip())
         QApplication.processEvents()
-        
-    def flush(self):
-        pass
-        
-    def closeEvent(self, event):
-        sys.stdout = self.stdout
-        super().closeEvent(event)
         
     def update_progress(self, value, message=""):
         self.progress.setValue(value)
@@ -74,7 +63,6 @@ def main():
     loading.update_progress(100, "Launching AINA...")  # Ensure 100% is reached
     window.show()
     loading.close()
-    sys.stdout = loading.stdout
     
     sys.exit(app.exec())
 

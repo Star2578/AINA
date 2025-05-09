@@ -34,13 +34,16 @@ class AINA(QWidget):
         
         self.progress_updated.emit(60, "Setting up UI...")
         self.init_ui()
-        self.progress_updated.emit(80, "Positioning window...")
+        self.progress_updated.emit(70, "Positioning window...")
         self.move(self.config.get("pos_x", vw(70)), self.config.get("pos_y", vh(70)))
         
-        self.progress_updated.emit(90, "Initializing customizer and settings...")
+        self.progress_updated.emit(80, "Initializing customizer and settings...")
         self.settings = Settings(self)
         self.old_pos = None
         self.is_dragging = False
+        
+        self.progress_updated.emit(90, "Initializing LLM...")
+        self.llm = LLM(self)
         
         self.progress_updated.emit(100, "Initialization complete!")
 
@@ -127,7 +130,6 @@ class AINA(QWidget):
         # Model viewer and buttons
         content_layout = QHBoxLayout()
         self.video = VideoPlayer("assets/animations/idle.mp4")
-        self.video.set_crop(130, 75, 50, 50)
         self.video.show()
         content_layout.addWidget(self.video, stretch=2)
         
@@ -171,9 +173,6 @@ class AINA(QWidget):
     
         self.setLayout(outer_layout)
         self.setMinimumSize(300, 200 + self.drag_area_size)
-        
-        # Initialize LLM
-        self.llm = LLM(self)
 
     def load_config(self):
         """Load settings from config file, using defaults if not found."""
@@ -203,7 +202,7 @@ class AINA(QWidget):
         self.config.setdefault("llm_top_k", 40)
         self.config.setdefault("llm_top_p", 0.9)
         self.config.setdefault("llm_temperature", 0.7)
-        self.config.setdefault("ollama_model", "")
+        self.config.setdefault("ollama_model", "pacozaa/openthaigpt:latest")
         self.config.setdefault("ollama_base_url", "http://localhost:11434")
 
     def save_config(self):
@@ -235,7 +234,6 @@ class AINA(QWidget):
             self.chat_input.setEnabled(False)
             self.send_button.setEnabled(False)
             self.send_button.setIcon(QIcon("assets/icons/loading.png"))
-            self.chat_input.clear()
             self.llm.process_message(message)
 
     def process_message_response(self, response):
@@ -243,13 +241,14 @@ class AINA(QWidget):
         self.chat_history.append(f"User: {self.chat_input.toPlainText().strip()}\nAINA: {response}")
         self.current_response = response
         self.response_index = 0
+        self.chat_input.clear()
         self.chat_bubble.setPlainText("")
         self.chat_bubble.setVisible(True)
         
         # Start typing animation
         self.animation_timer = QTimer(self)
         self.animation_timer.timeout.connect(self.animate_text)
-        self.animation_timer.start(self.config.get("typing_speed", 50))  # ms per character
+        self.animation_timer.start(self.config.get("typing_speed", 10))  # ms per character
         
         self.chat_input.setEnabled(True)
         self.send_button.setEnabled(True)
@@ -342,6 +341,7 @@ class AINA(QWidget):
         self.chat_history.clear()
         self.chat_input.setEnabled(True)
         self.send_button.setEnabled(True)
+        self.video.set_video("assets/animations/idle.mp4")
         self.send_button.setIcon(QIcon("assets/icons/send.png"))
 
     def start_drag(self):
