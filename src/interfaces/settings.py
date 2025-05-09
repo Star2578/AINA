@@ -67,11 +67,11 @@ class Settings(QWidget):
         general_layout.addStretch()
         general_widget.setLayout(general_layout)
         self.stack.addWidget(general_widget)
-        # TODO : Implement font, color theme
         
 
         # LLM Model (placeholder)
-        # TODO : Implement 
+        # - Ollama Model : Model to use
+        # - Ollama Url : Ollama url
         # - Overhead Prompt : How should AINA respond
 
         llm_widget = QWidget()
@@ -127,7 +127,6 @@ class Settings(QWidget):
         self.stack.addWidget(llm_widget)
 
         # Generation (placeholder)
-        # TODO : Implement
         # - Top K : Creativity
         # - Top P : Nucleus Sampling
         # - Temperature : Randomness
@@ -191,6 +190,8 @@ class Settings(QWidget):
         self.width_input.textChanged.connect(self.check_general_changes)
         self.height_input.textChanged.connect(self.check_general_changes)
         self.allow_overflow.stateChanged.connect(self.check_general_changes)
+        self.ollama_model.textChanged.connect(self.check_llm_changes)
+        self.ollama_base_url.textChanged.connect(self.check_llm_changes)
         self.llm_prompt.textChanged.connect(self.check_llm_changes)
         self.top_p.textChanged.connect(self.check_gen_changes)
         self.top_k.textChanged.connect(self.check_gen_changes)
@@ -228,17 +229,6 @@ class Settings(QWidget):
         except ValueError:
             print("Invalid generation values")
 
-    # def restore_default_model(self):
-    #     self.aina.viewer.load_model(self.aina.default_model_path)
-    #     self.aina.viewer.part_visibility.clear()
-    #     for part_id in range(len(self.aina.viewer.meshes)):
-    #         self.aina.viewer.part_visibility[part_id] = True
-    #     self.model_path_label.setText(f"Current: {self.aina.default_model_path}")
-    #     self.aina.save_config()
-    #     if self.aina.customizer and self.aina.customizer.isVisible():
-    #         self.aina.customizer.tree.clear()
-    #         self.aina.customizer.populate_tree()
-
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.old_pos = event.globalPosition().toPoint()
@@ -262,7 +252,13 @@ class Settings(QWidget):
             self.general_apply_btn.setEnabled(True)
 
     def check_llm_changes(self):
-        self.llm_apply_btn.setEnabled(self.llm_prompt.toPlainText() != self.aina.config["llm_prompt"])
+        try:
+            prompt_changed = self.llm_prompt.toPlainText() != self.aina.config["llm_prompt"]
+            ollama_model_changed = self.ollama_model.toPlainText() != self.aina.config["ollama_model"]
+            ollama_base_url = self.ollama_base_url.toPlainText() != self.aina.config["ollama_base_url"]
+            self.llm_apply_btn.setEnabled(prompt_changed or ollama_model_changed or ollama_base_url)
+        except ValueError:
+            self.llm_apply_btn.setEnabled(True)
 
     def check_gen_changes(self):
         try:
